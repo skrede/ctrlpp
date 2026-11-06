@@ -1,6 +1,6 @@
 # observer_policy
 
-Concept definitions for observer types in ctrlpp. The `ObserverPolicy` concept defines the minimal interface that any state observer must satisfy for composition with controllers and other library components. The `CovarianceObserver` refinement adds covariance and innovation access for types that maintain probabilistic state estimates. A `null_observer` sentinel type is also provided for controllers that do not need an observer.
+Concept definitions for observer types in ctrlpp. The `ObserverPolicy` concept states the minimal interface every ctrlpp observer has, so user code can write one loop for any of them; no library component is constrained on it, and controllers take a state, not an observer. The `CovarianceObserver` refinement adds covariance and innovation access. A `null_observer` type satisfies `ObserverPolicy` with no-op operations, for generic user code that is instantiated without an observer.
 
 ## Header and Alias
 
@@ -33,12 +33,12 @@ Any type satisfying `ObserverPolicy` provides:
 
 | Requirement | Description |
 |-------------|-------------|
-| `observer_tag` | A unique tag type for type identification |
+| `observer_tag` | A member type; the library's observers alias a distinct struct per type and `null_observer` aliases `void`. Nothing in the library reads it |
 | `state_vector_t` | The state vector type |
 | `input_vector_t` | The control input type |
 | `output_vector_t` | The measurement type |
-| `predict(u)` | Propagate state estimate forward one step |
-| `update(z)` | Incorporate a measurement |
+| `predict(u)` | Propagate state estimate forward one step; any return type |
+| `update(z)` | Incorporate a measurement; any return type (the library's observers return `ctrlpp::expected<void, E>`) |
 | `state()` | Return the current state estimate |
 
 ### CovarianceObserver
@@ -51,7 +51,7 @@ concept CovarianceObserver = ObserverPolicy<O> && requires(const O& obs) {
 };
 ```
 
-Refines `ObserverPolicy` with covariance and innovation access. Satisfied by `kalman_filter`, `ekf`, `ukf`, `mekf`, and `manifold_ukf`.
+Refines `ObserverPolicy` with covariance and innovation access; the concept requires the two calls to compile and constrains neither return type. Satisfied by `kalman_filter`, `ekf`, `ukf`, `mekf`, `manifold_ukf`, `mhe` and `nmhe`.
 
 ## Types Satisfying ObserverPolicy
 
@@ -65,13 +65,15 @@ Refines `ObserverPolicy` with covariance and innovation access. Satisfied by `ka
 | `mekf` | yes | `estimation/mekf.h` |
 | `manifold_ukf` | yes | `estimation/manifold_ukf.h` |
 | `complementary_filter` | no | `estimation/complementary_filter.h` |
+| `mhe` | yes | `mhe.h` |
+| `nmhe` | yes | `nmhe.h` |
 | `null_observer` | no | `estimation/observer_policy.h` |
 
 `particle_filter` does expose a `covariance()` accessor returning the weighted posterior covariance of its particle set, but it carries no innovation, so it does not satisfy the refinement. The concept requires both.
 
 ## null_observer
 
-A sentinel type for controllers that do not use an observer. All operations are no-ops with `std::monostate` as the vector type.
+A type with no-op operations and `std::monostate` as every vector type; `state()` returns a reference to a function-local static `std::monostate`. It satisfies `ObserverPolicy` and not `CovarianceObserver`.
 
 ```cpp
 struct null_observer
@@ -110,11 +112,10 @@ void run_loop(Observer& obs, auto& ctrl, auto& sys, int steps)
     x_true << 1.0, 0.0;
 
     for (int k = 0; k < steps; ++k) {
-        auto x_est = obs.state();
-        auto u = ctrl.compute(x_est);
+        input_t u = ctrl.compute(obs.state());
 
-        output_t z = sys.C * x_true;
         x_true = sys.A * x_true + sys.B * u;
+        output_t z = sys.C * x_true;
 
         obs.predict(u);
         // The concept does not constrain update's return type, so a generic
@@ -126,7 +127,7 @@ void run_loop(Observer& obs, auto& ctrl, auto& sys, int steps)
             return;
         }
 
-        std::cout << k << "," << x_true(0) << "," << x_est(0) << "\n";
+        std::cout << k << "," << x_true(0) << "," << obs.state()(0) << "\n";
     }
 }
 
@@ -146,16 +147,17 @@ int main()
         Eigen::Matrix2d::Identity() * 10.0,
         Eigen::Matrix<Scalar, 1, 1>::Identity());
     if (!K_opt.has_value())
-        return;
+        return 1;
 
     ctrlpp::lqr<Scalar, NX, NU> ctrl(*K_opt);
 
     auto kf_result = ctrlpp::kalman_filter<Scalar, NX, NU, NY>::create(sys, {});
     if (!kf_result)
-        return;
+        return 1;
     auto& kf = *kf_result;
 
     run_loop(kf, ctrl, sys, 100);
+    return 0;
 }
 ```
 

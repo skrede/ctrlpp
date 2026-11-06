@@ -12,7 +12,7 @@ A constant-velocity model in one dimension:
 
 ```
 state  = [position, velocity]
-input  = [] (no control input)
+input  = [u] (one input, held at zero; the dimensions must be positive)
 output = [position] (we only measure position)
 ```
 
@@ -61,9 +61,9 @@ int main()
     Eigen::Vector2d x0 = Eigen::Vector2d::Zero();
     Eigen::Matrix2d P0 = Eigen::Matrix2d::Identity() * 10.0;
 
-    // Construction is fallible: the factory rejects a configuration whose
-    // Q, R, x0 or P0 carries a non-finite entry, naming which one, rather than
-    // accepting it and producing a non-finite estimate at the first step.
+    // Construction is fallible: the factory rejects a non-finite x0 and a Q, R
+    // or P0 that is non-finite, asymmetric or indefinite, naming which one,
+    // rather than accepting it and producing a meaningless estimate.
     auto kf_result = ctrlpp::kalman_filter<double, NX, NU, NY>::create(
         sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
     if (!kf_result)
@@ -138,9 +138,10 @@ Every step in the loop follows the same two-phase pattern:
    and the plant already executed; if one poisons the state, `kf.health()` says
    so from the next `update` onward.
 
-This cycle repeats at every time step. The filter converges quickly &mdash; within
-a few steps the estimated velocity (which is not directly measured) tracks the
-true velocity closely.
+This cycle repeats at every time step. Within about twenty steps (two seconds)
+the estimated velocity, which is not measured, is near the true velocity. It
+keeps wandering by a few tenths, because `Q = 0.01 I` tells the filter the
+velocity itself changes from step to step.
 
 ## Tuning the Noise Covariances
 

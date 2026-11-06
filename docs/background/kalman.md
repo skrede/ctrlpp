@@ -25,7 +25,8 @@ z_k = C \, x_k + v_k
 $$
 
 where $x_k \in \mathbb{R}^n$ is the state, $u_k$ is the known control input,
-$z_k$ is the measurement, $w_k \sim \mathcal{N}(0, Q)$ is process noise, and
+$z_k$ is the measurement (the model has no feedthrough term; ctrlpp's filter
+ignores the `D` of a `discrete_state_space`), $w_k \sim \mathcal{N}(0, Q)$ is process noise, and
 $v_k \sim \mathcal{N}(0, R)$ is measurement noise. The noise sequences are
 assumed white, zero-mean, and mutually uncorrelated.
 
@@ -90,8 +91,10 @@ $$
 P_{k|k} = (I - K_k C) \, P_{k|k-1} \, (I - K_k C)^\top + K_k \, R \, K_k^\top
 $$
 
-This form is more expensive but essential for long-running filters where
-numerical drift can accumulate.
+It equals the short form for the optimal gain in exact arithmetic, and it stays
+positive semidefinite for any gain, so an inexact $K_k$ does not make the
+covariance indefinite. ctrlpp's `kalman_filter` uses the Joseph form and
+symmetrizes the result.
 
 ## Optimality Properties
 
@@ -126,7 +129,9 @@ $$
 
 This allows precomputing the gain, reducing the online computation to a
 matrix-vector multiply. Convergence requires the system to be detectable
-(all unstable modes are observable) [1, Sec. 5.5, p. 143].
+(all unstable modes are observable) [1, Sec. 5.5, p. 143]. ctrlpp's
+`kalman_filter` always runs the time-varying recursion above;
+`is_steady_state()` reports when successive covariances have stopped changing.
 
 ## Noise Tuning
 
@@ -146,9 +151,10 @@ tuning based on the expected magnitude of model uncertainty and disturbances.
 
 ## Observability
 
-The Kalman filter converges only if the system is observable &mdash; that is, the
-state can be uniquely determined from a finite sequence of measurements. The
-observability matrix [3, Sec. 12.3, pp. 683--690]:
+The Kalman filter can reconstruct the whole state only if the system is
+observable &mdash; that is, the state can be uniquely determined from a finite
+sequence of measurements; detectability, as above, is what the convergence of
+the error covariance requires. The observability matrix [3, Sec. 12.3, pp. 683--690]:
 
 $$
 \mathcal{O} = \begin{bmatrix} C \\ CA \\ CA^2 \\ \vdots \\ CA^{n-1} \end{bmatrix}

@@ -38,7 +38,10 @@ $$
 
 where $\lambda = \alpha^2 (n + \kappa) - n$ is the composite scaling parameter
 and $\left(\sqrt{M}\right)_i$ denotes the $i$-th column of a matrix square
-root of $M$ (typically computed via Cholesky or LDLT decomposition).
+root of $M$. ctrlpp uses the lower Cholesky factor of $P$, scaled by
+$\sqrt{n + \lambda}$; when $P$ is not positive definite it first clamps the
+eigenvalues of $P$ up to $n \, \epsilon \max_{ij} |P_{ij}|$ and reports the
+repair.
 
 ### Sigma-Point Weights
 
@@ -65,6 +68,10 @@ The three parameters control the sigma-point distribution
 - **$\kappa$**: secondary scaling parameter. A common choice is
   $\kappa = 3 - n$ to match the fourth moment of the Gaussian
   [2, Sec. IV, p. 410].
+
+ctrlpp's `merwe_sigma_points` defaults to $\alpha = 10^{-3}$, $\beta = 2$,
+$\kappa = 0$, which make $W_0^{(m)}$ and $W_0^{(c)}$ about $-10^6$; the
+[UKF reference](../api/estimation/ukf.md) states what that costs.
 
 ### Transform Procedure
 
@@ -102,27 +109,34 @@ $$
 
 ### Update
 
-1. Regenerate sigma points from $(\hat{x}_{k|k-1}, P_{k|k-1})$
+1. Regenerate sigma points $\mathcal{X}^{(i)}$ from
+   $(\hat{x}_{k|k-1}, P_{k|k-1})$; the points propagated in the prediction are
+   not reused
 2. Transform through the measurement model:
-   $\mathcal{Z}_{k}^{(i)} = h(\mathcal{X}_{k|k-1}^{(i)})$
-3. Compute predicted measurement and covariances:
+   $\mathcal{Z}_{k}^{(i)} = h(\mathcal{X}^{(i)})$
+3. Compute the predicted measurement, its covariance, the innovation
+   covariance and the cross-covariance:
 
 $$
 \hat{z}_k = \sum_i W_i^{(m)} \mathcal{Z}_k^{(i)}
 $$
 
 $$
-P_{zz} = \sum_i W_i^{(c)} (\mathcal{Z}_k^{(i)} - \hat{z}_k)(\mathcal{Z}_k^{(i)} - \hat{z}_k)^\top + R
+P_{zz} = \sum_i W_i^{(c)} (\mathcal{Z}_k^{(i)} - \hat{z}_k)(\mathcal{Z}_k^{(i)} - \hat{z}_k)^\top
 $$
 
 $$
-P_{xz} = \sum_i W_i^{(c)} (\mathcal{X}_{k|k-1}^{(i)} - \hat{x}_{k|k-1})(\mathcal{Z}_k^{(i)} - \hat{z}_k)^\top
+S_k = P_{zz} + R
+$$
+
+$$
+P_{xz} = \sum_i W_i^{(c)} (\mathcal{X}^{(i)} - \hat{x}_{k|k-1})(\mathcal{Z}_k^{(i)} - \hat{z}_k)^\top
 $$
 
 4. Compute the Kalman gain and update:
 
 $$
-K_k = P_{xz} \, P_{zz}^{-1}
+K_k = P_{xz} \, S_k^{-1}
 $$
 
 $$
@@ -133,14 +147,21 @@ $$
 P_{k|k} = P_{k|k-1} - K_k \, S_k \, K_k^\top
 $$
 
-where $S_k = P_{zz} + R$ is the innovation covariance. Because $K_k = P_{xz}
-S_k^{-1}$, the reduction $K_k S_k K_k^\top$ equals $K_k P_{xz}^\top$, the exact
-amount of uncertainty the measurement removes. This is the minimum
-mean-square-error posterior; no additional term is added. When robustness
-against negative covariance weights $W_i^{(c)}$ (which occur with the scaled
-Merwe transform for small $\alpha$) is required, the algebraically identical
-Joseph form $P - K P_{xz}^\top - P_{xz} K^\top + K S K^\top$ may be used for its
-better rounding behavior.
+Because $K_k = P_{xz} S_k^{-1}$, the reduction $K_k S_k K_k^\top$ equals
+$K_k P_{xz}^\top = P_{xz} S_k^{-1} P_{xz}^\top$, the uncertainty the measurement
+removes under the sigma-point statistics; no $K_k R K_k^\top$ term is added.
+This identity is all the update relies on. ctrlpp forms
+$P_{k|k-1} - K_k S_k K_k^\top$ and symmetrizes it; when the sigma points were
+built from a repaired $P_{k|k-1}$, the reduction starts from the repaired
+matrix, since $K_k$ and $S_k$ describe that one.
+
+The posterior is positive semidefinite when every $W_i^{(c)}$ is nonnegative:
+it is then a Schur complement of the weighted joint covariance of
+$(\mathcal{X}^{(i)}, \mathcal{Z}_k^{(i)})$ with $R$ added. A negative
+$W_0^{(c)}$, which the scaled transform gives for small $\alpha$ and the
+original one for $\kappa < 0$, removes that guarantee when $h$ is nonlinear.
+ctrlpp tests the posterior with a Cholesky factorization and reports one that
+is not positive definite through `health()`.
 
 ## Sigma-Point Strategies
 
@@ -156,8 +177,9 @@ This is the most widely used variant [3, Sec. 7.2].
 
 The original unscented transform uses a single parameter $\kappa$, with
 $\alpha = 1$ and $\beta = 0$ implicitly [2, Sec. III]. Simpler but less
-flexible. The zeroth sigma point has weight $\kappa / (n + \kappa)$, which
-can be negative for large state dimensions if $\kappa < 0$.
+flexible. The zeroth sigma point has weight $\kappa / (n + \kappa)$, which is
+negative whenever $\kappa < 0$, as the choice $\kappa = 3 - n$ gives for
+$n > 3$.
 
 ## EKF vs UKF Comparison
 
@@ -166,7 +188,8 @@ can be negative for large state dimensions if $\kappa < 0$.
 | Nonlinearity           | Mild                       | Moderate to strong         |
 | Jacobians required     | Yes                        | No                         |
 | Accuracy               | First order                | Second order               |
-| Computational cost     | $O(n^2)$ per Jacobian      | $O(n^3)$ for Cholesky      |
+| Model evaluations      | 1 per predict or update, plus $2n$ for a numerical Jacobian | $2n + 1$ per predict or update |
+| Matrix cost            | $O(n^3)$ products          | $O(n^3)$ Cholesky and products |
 | State dimension        | Any                        | Moderate ($2n+1$ points)   |
 | Implementation effort  | Jacobians needed           | Only dynamics function     |
 

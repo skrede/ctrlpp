@@ -49,6 +49,21 @@ The error converges to zero if and only if all eigenvalues of $(A - LC)$ lie
 strictly inside the unit circle. The observer gain $L$ determines how quickly
 the estimate converges.
 
+### The current-estimator form ctrlpp implements
+
+ctrlpp's `luenberger_observer` splits the step into a prediction
+$\bar{x}_k = A \hat{x}_{k-1} + B u_{k-1}$ and a correction with the measurement
+of the predicted state, $\hat{x}_k = \bar{x}_k + L (y_k - C \bar{x}_k)$. Its
+error evolves as
+
+$$
+e_k = (I - L C) \, A \, e_{k-1}
+$$
+
+so its error poles are the eigenvalues of $A - L C A$, not of $A - L C$. Placing
+them is the dual problem with $C A$ in place of $C$: `place_observer(A, C * A,
+poles)`.
+
 ## Observability
 
 The observer can reconstruct the full state only if the system is observable.
@@ -92,7 +107,8 @@ polynomial evaluated at $A$.
 For multi-output systems, more general algorithms such as the method of
 Kautsky, Nichols, and Van Dooren [3, pp. 1129--1155] are used. This method
 iteratively selects eigenvectors to minimize sensitivity while placing
-eigenvalues at the specified locations.
+eigenvalues at the specified locations. ctrlpp's `place_observer` implements
+Ackermann's formula only and refuses a system with more than one output.
 
 ## Observer Design Guidelines
 
@@ -123,8 +139,9 @@ This means:
 3. The combined system $u_k = -K \hat{x}_k$ with observer has eigenvalues
    $\text{eig}(A - BK) \cup \text{eig}(A - LC)$
 
-The separation principle holds for linear systems but does not extend to
-nonlinear systems in general.
+With the current-estimator form above, the observer's share is
+$\text{eig}(A - LCA)$ instead. The separation principle holds for linear
+systems but does not extend to nonlinear systems in general.
 
 ## Relationship to Kalman Filter
 
@@ -143,7 +160,7 @@ A full-order observer estimates all $n$ states, including those that are
 directly measured. A reduced-order (Luenberger) observer estimates only the
 $n - m$ unmeasured states, using the measured outputs directly. This reduces
 computation but increases design complexity
-[1, Sec. 12.5, pp. 698--699].
+[1, Sec. 12.5, pp. 698--699]. ctrlpp provides only the full-order observer.
 
 ## References
 

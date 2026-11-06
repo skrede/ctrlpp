@@ -93,6 +93,12 @@ $$
 The innovation $\tilde{y}_k$ uses the nonlinear function $h$ evaluated at
 the predicted state, not a linearized version.
 
+ctrlpp's `ekf` forms the covariance update in the Joseph form,
+$(I - K_k H_k) P_{k|k-1} (I - K_k H_k)^\top + K_k R K_k^\top$, which equals
+the short form above for this $K_k$ in exact arithmetic and stays positive
+semidefinite for any gain, and it symmetrizes both the predicted and the
+updated covariance.
+
 ## Jacobian Computation
 
 The EKF requires Jacobians at every time step. Two approaches exist:
@@ -119,6 +125,11 @@ $$
 
 where $e_j$ is the $j$-th standard basis vector and $\delta$ is a small
 perturbation. Central differences provide second-order accuracy in $\delta$.
+ctrlpp perturbs component $j$ by
+$\delta_j = \epsilon^{1/3} \max(1, |x_j|)$, rounded to the representable
+difference $(x_j + \delta_j) - x_j$; the cube root of machine epsilon
+balances the $O(\delta^2)$ truncation error against the $O(\epsilon / \delta)$
+rounding error. The factor $\epsilon^{1/3}$ is `ekf_config::numerical_eps`.
 
 ## Limitations
 
@@ -146,7 +157,8 @@ The iterated EKF (IEKF) re-linearizes the measurement model around the
 updated state estimate and repeats the update step until convergence
 [1, Sec. 13.5, pp. 416--418]. This is equivalent to performing a
 Gauss-Newton optimization on the measurement update and can improve
-accuracy for strongly nonlinear measurement functions.
+accuracy for strongly nonlinear measurement functions. ctrlpp's `ekf` does not
+iterate: it linearizes the measurement once per update.
 
 ## Consistency Monitoring
 
@@ -159,6 +171,9 @@ health. For a well-tuned EKF [2, Sec. 8.4, pp. 232--235]:
 - The normalized estimation error squared (NEES):
   $\epsilon_k = \tilde{x}_k^\top P_{k|k}^{-1} \tilde{x}_k$ should follow
   $\chi^2$ with $n$ degrees of freedom (when true state is available)
+
+`ekf::nis()` returns the NIS of the last update; the NEES needs the true state
+and is left to the caller.
 
 Persistent departures from these distributions indicate model mismatch or
 incorrect noise tuning.

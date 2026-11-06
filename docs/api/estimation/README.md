@@ -26,15 +26,15 @@ directly on SO(3) (MEKF, manifold UKF, complementary filter).
 
 ### Interface
 
-- [observer_policy](observer-policy.md)<br/> Observer concept for controller composition
+- [observer_policy](observer-policy.md)<br/> Observer concepts shared by every estimator
 
 ## When to use
 
 Pick **kalman** or **luenberger** for linear systems with known dynamics.
 
-Pick **EKF** when you have a nonlinear model and can provide (or auto-generate)
-Jacobians. Pick **UKF** when Jacobians are unavailable or the nonlinearity is
-severe &mdash; sigma points handle it without linearization.
+Pick **EKF** when you have a nonlinear model and either provide its Jacobians or
+let the filter form them by central differences. Pick **UKF** when Jacobians are
+unavailable or the nonlinearity is strong; sigma points need no Jacobian.
 
 Pick **particle filter** for highly nonlinear or multimodal distributions where
 Gaussian assumptions break down.
@@ -46,6 +46,8 @@ SO(3). Pick **complementary filter** for lightweight IMU/MARG sensor fusion.
 
 For the mathematical background, see
 [Kalman Theory](../../background/kalman.md),
-[EKF/UKF Theory](../../background/ekf-ukf.md),
+[Observer Theory](../../background/observers.md),
+[EKF Theory](../../background/ekf.md),
+[UKF Theory](../../background/ukf.md),
 [Particle Filter Theory](../../background/particle-filter.md), and
 [Attitude Estimation Theory](../../background/attitude-estimation.md).

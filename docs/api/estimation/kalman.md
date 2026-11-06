@@ -1,6 +1,6 @@
 # kalman_filter
 
-Linear discrete-time Kalman filter with Joseph-form covariance update. Operates on a `discrete_state_space` model (A, B, C, D matrices) and provides optimal state estimation for linear systems with Gaussian noise. The Joseph form ensures numerical stability of the covariance update even with finite-precision arithmetic.
+Linear discrete-time Kalman filter with a Joseph-form covariance update. It operates on the `A`, `B` and `C` matrices of a `discrete_state_space` model and gives the minimum-variance estimate for a linear plant with white Gaussian process and measurement noise. The Joseph form keeps the updated covariance positive semidefinite for any gain, and the filter symmetrizes it after every update.
 
 ## Header and Alias
 
@@ -14,7 +14,7 @@ Linear discrete-time Kalman filter with Joseph-form covariance update. Operates 
 
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
-| `Scalar` | arithmetic type | Numeric type (e.g. `double`, `float`) |
+| `Scalar` | `ctrlpp_floating_scalar` | Floating-point type (e.g. `double`, `float`) |
 | `NX` | `std::size_t` | State dimension |
 | `NU` | `std::size_t` | Input dimension |
 | `NY` | `std::size_t` | Measurement dimension |
@@ -45,10 +45,10 @@ using system_t          = discrete_state_space<Scalar, NX, NU, NY>;
 static ctrlpp::expected<kalman_filter, filter_error> create(system_t sys, kalman_config<Scalar, NX, NU, NY> config);
 ```
 
-`create` is the only construction path; there is no public constructor. A
-factory that sat beside one would validate nothing, since any caller could
-bypass it. It builds the filter from a discrete state-space model and a
-configuration, and uses C++20 designated initializers for the config.
+`create` is the only construction path; there is no public constructor. It
+builds the filter from a discrete state-space model and a configuration; the
+model is not validated. `kalman_config` is an aggregate with the defaults above,
+so a caller designated-initializes only the fields it overrides.
 
 Rejections, checked in the order the config aggregate declares its fields (the
 fields are independent, so the order is declaration order rather than a claim
@@ -102,7 +102,7 @@ if(!filter)
 void predict(const input_vector_t& u);
 ```
 
-Propagates state and covariance one step forward: x = Ax + Bu, P = APA' + Q.
+Propagates state and covariance one step forward: x = Ax + Bu, P = APA' + Q. It also stores the covariance it started from, which [`is_steady_state`](#is_steady_state) compares against.
 
 ### update
 
@@ -110,15 +110,16 @@ Propagates state and covariance one step forward: x = Ax + Bu, P = APA' + Q.
 ctrlpp::expected<void, kalman_update_error> update(const output_vector_t& z);
 ```
 
-Incorporates a measurement via the Kalman gain. Uses Joseph-form covariance update: P = (I-KC)P(I-KC)' + KRK'. Computes and stores the innovation and NIS.
+Incorporates a measurement. The innovation is `z - Cx` (the feedthrough `D` is not used), `S = CPC' + R`, and the gain `K = PC'S^-1` is solved with a column-pivoting QR factorization of `S` (a division when `NY = 1`). The state becomes `x + K(z - Cx)` and the covariance the Joseph form `(I-KC)P(I-KC)' + KRK'`, symmetrized. The innovation and the NIS are stored.
 
-The step is rejected **before any member is assigned**, so a rejected step leaves the state, the covariance, the innovation and the NIS bitwise unchanged and the caller may retry with the next sample. Each cause is an exact domain condition, not a tuning preference: a non-finite operand makes every downstream product non-finite, so no estimate can be formed at all.
+A refused step leaves the state, the covariance, the innovation and the NIS bitwise unchanged, so the caller may retry with the next sample. The first three causes are checked before anything is computed; the fourth is checked on the computed result, which is then discarded. Each cause is an exact domain condition, not a tuning preference: a non-finite operand makes every downstream product non-finite, so no estimate can be formed at all.
 
 | Condition | Error | Why it is a separate cause |
 |---|---|---|
 | the carried state estimate is already non-finite | `kalman_update_error::non_finite_state` | The fault is upstream of the measurement, so it is reported ahead of it: a caller told the measurement is bad would replace a working sensor while the real fault sits in the prediction that poisoned the state |
 | the carried covariance is already non-finite | `kalman_update_error::non_finite_covariance` | The covariance recursion is driven by the model and by `Q` and `R`, never by the measurement, so the caller fixes a different input |
 | the supplied measurement has a non-finite component | `kalman_update_error::non_finite_measurement` | The gain carries it into the state, which is the filter's carried memory, so one such sample destroys the estimate permanently |
+| the updated state, covariance, innovation or NIS is non-finite although the carried estimate and the measurement were finite | `kalman_update_error::non_finite_result` | The step's own arithmetic overflowed or divided by zero, as a model replaced through `set_model` with a non-finite `C` does, or a zero innovation covariance with one output (a point-mass `P0` with `R = 0`); the fault is in the model or the noise, not in the carried estimate or the sample |
 
 `predict` is deliberately not fallible. Its input is a command the caller already owns and the plant already took, so refusing it would leave the filter with no propagation for a step that happened. A prediction that poisons the carried estimate is reported by [`health`](#health) instead, which the next `update` latches.
 
@@ -144,7 +145,7 @@ Returns the current error covariance.
 const output_vector_t& innovation() const;
 ```
 
-Returns the most recent measurement innovation (z - Cx).
+Returns the innovation `z - Cx` of the last committed update, formed with the predicted state; zero before the first one.
 
 ### nis
 
@@ -152,7 +153,7 @@ Returns the most recent measurement innovation (z - Cx).
 Scalar nis() const;
 ```
 
-Returns the Normalized Innovation Squared from the last update (innovation^T S^-1 innovation), chi-square distributed with dof = NY under a consistent filter.
+Returns the normalized innovation squared of the last committed update, `innovation' S^-1 innovation` with `S = CPC' + R` formed from the predicted covariance and solved with a column-pivoting QR factorization. It is chi-square distributed with `NY` degrees of freedom when the model and the noise covariances are right. It is zero before the first update.
 
 ### health
 
@@ -160,7 +161,7 @@ Returns the Normalized Innovation Squared from the last update (innovation^T S^-
 kalman_health health() const;
 ```
 
-Returns the persistent state-health status, one of `kalman_health::ok` or `kalman_health::non_finite_estimate`. It answers a question a per-call result cannot, because the question outlives the call: whether the carried estimate is still degraded from a step several samples ago. The status starts at `ok` and latches to `non_finite_estimate` the first time a step finds the carried state or covariance already non-finite, which is how a poisoned `predict` becomes visible. A **rejected measurement does not set it**: the rejection mutates nothing, so it leaves the filter healthy. The query carries no discard warning; asking it is optional.
+Returns the persistent state-health status, one of `kalman_health::ok` or `kalman_health::non_finite_estimate`. It answers a question a per-call result cannot, because the question outlives the call: whether the carried estimate is still degraded from a step several samples ago. The status starts at `ok` and latches to `non_finite_estimate` when an `update` is refused with `non_finite_state` or `non_finite_covariance`, which is how a poisoned `predict` becomes visible. Nothing clears it: neither `reset_covariance` nor `set_noise` nor `set_model` resets it. An update refused with `non_finite_measurement` or `non_finite_result` does not set it, since neither leaves a non-finite estimate behind.
 
 ### is_steady_state
 
@@ -168,7 +169,7 @@ Returns the persistent state-health status, one of `kalman_health::ok` or `kalma
 bool is_steady_state(Scalar tol = Scalar{1e-10}) const;
 ```
 
-Returns true if the covariance has converged (relative change below tolerance).
+Returns true when `||P - P_prev|| / ||P|| < tol` in the Frobenius norm, where `P_prev` is the covariance the last `predict` started from, or when `||P||` is below machine epsilon. Called after an update, it compares two successive posterior covariances.
 
 ### reset_covariance
 
@@ -190,7 +191,7 @@ and the caller's matrix is not modified.
 void set_model(system_t sys);
 ```
 
-Replaces the state-space model (for adaptive or switched systems).
+Replaces the state-space model (for adaptive or switched systems). The model is not validated; a non-finite entry surfaces as `non_finite_result` or, through `predict`, as `non_finite_state`.
 
 ### set_noise
 
@@ -232,11 +233,16 @@ int main()
     ctrlpp::kalman_config<Scalar, NX, NU, NY> cfg{
         .Q = (Eigen::Matrix2d() << 0.01, 0.0, 0.0, 0.1).finished(),
         .R = (Eigen::Matrix<Scalar, 1, 1>() << 1.0).finished(),
-        .x0 = Eigen::Vector2d::Zero(),
         .P0 = Eigen::Matrix2d::Identity() * 10.0
     };
 
-    ctrlpp::kalman_filter<Scalar, NX, NU, NY> kf(sys, cfg);
+    auto created = ctrlpp::kalman_filter<Scalar, NX, NU, NY>::create(sys, cfg);
+    if(!created)
+    {
+        std::cerr << "invalid Kalman filter configuration\n";
+        return 1;
+    }
+    auto& kf = *created;
 
     std::mt19937 rng(42);
     std::normal_distribution<> noise(0.0, 1.0);
@@ -262,6 +268,12 @@ int main()
     }
 }
 ```
+
+## Limitations
+
+### The feedthrough matrix is not used
+
+The predicted measurement is `Cx`. `update` takes no input, so the `D` of the `discrete_state_space` model never enters it, and a plant whose output depends directly on its input (`D != 0`) is filtered as if `D` were zero. A caller with such a plant subtracts `Du` from the measurement before passing it to `update`.
 
 ## See Also
 

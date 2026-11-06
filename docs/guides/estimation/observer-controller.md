@@ -3,20 +3,23 @@
 In many real systems, not all states are directly measurable. An observer
 estimates the full state vector from partial measurements, and a controller
 uses that estimate. ctrlpp keeps observers and controllers as separate objects
-that compose through the `ObserverPolicy` concept &mdash; no coupling, no
-inheritance.
+with no coupling and no inheritance: the caller's loop passes the observer's
+estimate to the controller and the controller's command back to the observer.
+Every ctrlpp observer satisfies the `ObserverPolicy` concept, so that loop can be
+written once for any of them.
 
 ## The Pattern
 
 ```
 measurement --> [Observer] --> estimated_state --> [Controller] --> control
                     ^                                                  |
-                    |-------------- control (for predict)<br/>-----------|
+                    |-------------- control (for predict) -----------------|
 ```
 
 The observer's `state()` feeds the controller's `compute()` or `solve()`.
-The controller's output feeds back into the observer's `predict()` on the
-next step. This is standard separation of estimation and control.
+The command goes to the plant and to the observer's `predict()`; the
+measurement of the plant's next state then goes to `update()`. This is the
+standard separation of estimation and control.
 
 ## Kalman Filter + LQR
 
@@ -107,9 +110,6 @@ int main()
         auto x_est = kf.state();
         auto u = controller.compute(x_est);
 
-        // Measurement (position + angle)
-        Eigen::Matrix<Scalar, 2, 1> z = sys_d.C * x_true;
-
         std::cout << std::fixed << std::setprecision(4)
                   << t << "," << x_true(0) << "," << x_est(0) << ","
                   << x_true(2) << "," << x_est(2) << ","
@@ -118,15 +118,16 @@ int main()
         // Predict observer with applied control
         kf.predict(u);
 
-        // Propagate true state
+        // Propagate true state, then measure it (position + angle)
         x_true = ctrlpp::propagate(sys_d, x_true, u);
+        Eigen::Matrix<Scalar, 2, 1> z = sys_d.C * x_true;
 
         // Update observer with measurement. The step reports whether it ran, so
         // a non-finite sample cannot silently poison the estimate.
         if(!kf.update(z))
         {
             std::cerr << "Kalman filter rejected the measurement\n";
-            return;
+            return 1;
         }
     }
 }
@@ -174,8 +175,12 @@ concept ObserverPolicy = requires {
 ```
 
 All ctrlpp observers &mdash; `kalman_filter`, `luenberger_observer`, `ekf`, `ukf`,
-`particle_filter` &mdash; satisfy this concept. You can swap observers without
-changing the controller code.
+`particle_filter`, `mekf`, `manifold_ukf`, `complementary_filter`, `mhe` and
+`nmhe` &mdash; satisfy this concept. No controller is constrained on it; it lets
+a generic loop like the one on the
+[ObserverPolicy page](../../api/estimation/observer-policy.md) take any of them.
+Swapping observers leaves the controller code unchanged, since the controller
+only ever sees a state vector.
 
 ## Which Observer to Use
 
