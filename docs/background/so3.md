@@ -7,7 +7,11 @@ SO(3) is essential for attitude estimation, robotic manipulation, and any
 application involving 3D orientation [1, Ch. 7, pp. 211--266].
 
 This page covers rotation representations, the Lie group structure, the
-exponential and logarithmic maps, and the Adjoint representation.
+exponential and logarithmic maps, and the Adjoint representation. ctrlpp
+implements the quaternion exponential and logarithm, composition, conjugation,
+normalization and the skew matrix ([so3](../api/lie/so3.md)); the matrix
+logarithm, the Adjoint and the SO(3) Jacobians below are background and have
+no ctrlpp function.
 
 ## Rotation Matrices
 
@@ -57,6 +61,7 @@ p_w q_z + p_x q_y - p_y q_x + p_z q_w
 $$
 
 The inverse quaternion is the conjugate: $q^{-1} = [q_w, -q_x, -q_y, -q_z]^\top$.
+Under this product $R(p \otimes q) = R(p)\,R(q)$.
 
 ### Quaternion to Rotation Matrix
 
@@ -73,9 +78,11 @@ $\lVert \hat{e} \rVert = 1$ and an angle $\theta \in [0, \pi]$. The rotation
 vector $\phi = \theta \hat{e} \in \mathbb{R}^3$ is a minimal (3-parameter)
 representation [1, Sec. 7.1.2, pp. 215--218].
 
-The rotation vector is undefined when $\theta = 0$ (the axis direction is
-arbitrary for the identity rotation). This singularity at the identity is
-unavoidable for any 3-parameter representation (a topological constraint).
+The axis is undefined when $\theta = 0$, but the rotation vector itself is
+$\phi = 0$ there and the exponential map is smooth through it. The rotation
+vector is ambiguous at $\theta = \pi$ instead, where $\phi$ and $-\phi$ name
+the same rotation. No 3-parameter representation is free of such a
+singularity everywhere on SO(3) (a topological constraint).
 
 ## The Lie Algebra so(3)
 
@@ -106,7 +113,9 @@ $$
 $$
 
 This is Rodrigues' rotation formula. Near $\theta = 0$, the sinc-type
-coefficients are evaluated using Taylor series to avoid division by zero:
+coefficients would be evaluated using Taylor series to avoid division by zero
+(ctrlpp does not evaluate the matrix form; it forms the quaternion below and
+converts with Eigen's `toRotationMatrix()`):
 
 $$
 \frac{\sin \theta}{\theta} \approx 1 - \frac{\theta^2}{6} + \frac{\theta^4}{120}, \qquad
@@ -119,9 +128,11 @@ $$
 \exp(\phi) = \begin{bmatrix} \cos(\theta/2) \\ \frac{\sin(\theta/2)}{\theta} \phi \end{bmatrix}
 $$
 
-Near $\theta = 0$ both parts take their Taylor series,
+In ctrlpp, below $\theta = 10^{-7}$ both parts take their Taylor series,
 $\cos(\theta/2) \approx 1 - \theta^2/8$ and $\sin(\theta/2)/\theta \approx 1/2 - \theta^2/48$,
 so the small-angle quaternion is plain arithmetic and does not depend on the platform's math library.
+Above it the angle is reduced modulo $4\pi$, the period of the quaternion, and
+the result is normalized.
 
 ## Logarithmic Map
 
@@ -135,13 +146,17 @@ $$
 \log(R) = \frac{\theta}{2 \sin \theta} (R - R^\top)
 $$
 
-For a quaternion $q$:
+For a quaternion $q$, ctrlpp first flips $q$ to the hemisphere $q_w \ge 0$,
+since $q$ and $-q$ are the same rotation, and then computes
 
 $$
-\log(q) = \frac{2 \arccos(q_w)}{\lVert q_{xyz} \rVert} \, q_{xyz}
+\log(q) = \frac{2\, \operatorname{atan2}(\lVert q_{xyz} \rVert, q_w)}{\lVert q_{xyz} \rVert} \, q_{xyz}
 $$
 
-with sinc-expansion near $\theta = 0$ for numerical stability.
+which equals $2 \arccos(q_w)\, q_{xyz} / \lVert q_{xyz} \rVert$ for a unit
+quaternion but keeps its accuracy near $\theta = 0$. The result's norm lies in
+$[0, \pi]$. Below $\lVert q_{xyz} \rVert = 10^{-7}$ the limit $2\, q_{xyz}$ is
+used.
 
 ## Adjoint Representation
 
@@ -172,7 +187,9 @@ $$
 The right Jacobian is $J_r(\phi) = J_l(-\phi) = J_l(\phi)^\top$. These
 Jacobians appear in:
 
-- Error-state Kalman filter (MEKF) covariance propagation
+- Error-state Kalman filter (MEKF) covariance propagation, where the
+  bias-to-attitude coefficient over a step of rotation $\phi$ is
+  $-T_s J_r(\phi)$; ctrlpp's MEKF uses the first-order $-T_s I$
 - Optimization on manifolds (pose graph SLAM)
 - Interpolation between rotations
 
@@ -187,8 +204,11 @@ R_{\text{true}} = R_{\text{nominal}} \cdot \exp([\delta\phi]_\times)
 $$
 
 This separates the manifold structure (handled by the nominal rotation) from
-the linear perturbation (handled by standard linear algebra). The MEKF and
-manifold UKF both use this decomposition.
+the linear perturbation (handled by standard linear algebra). This is a right
+(body-frame) perturbation. ctrlpp's MEKF and manifold UKF define their tangent
+error this way, in quaternion form
+$q_{\text{true}} = q_{\text{nominal}} \otimes \exp(\delta\phi)$, and all three
+attitude filters apply their rotation increments on the right.
 
 ## References
 

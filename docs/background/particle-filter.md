@@ -9,7 +9,10 @@ arbitrary distributions and strongly nonlinear systems
 
 The bootstrap particle filter was introduced by Gordon, Salmond, and Smith
 in 1993 [2] and has since become the standard approach for low-dimensional
-nonlinear/non-Gaussian estimation problems.
+nonlinear/non-Gaussian estimation problems. ctrlpp's
+[particle_filter](../api/estimation/particle-filter.md) implements it with
+narrower noise models than the general setting below; the section
+[What ctrlpp implements](#what-ctrlpp-implements) states them.
 
 ## Problem Setting
 
@@ -72,6 +75,10 @@ $$
 \tilde{w}_k^{(i)} = p(z_k \mid x_k^{(i)})
 $$
 
+When resampling is not done every step, as with the ESS criterion below, the
+previous weight is carried:
+$\tilde{w}_k^{(i)} = w_{k-1}^{(i)}\, p(z_k \mid x_k^{(i)})$. ctrlpp does this.
+
 For Gaussian measurement noise $v_k \sim \mathcal{N}(0, R)$:
 
 $$
@@ -85,7 +92,7 @@ w_k^{(i)} = \frac{\tilde{w}_k^{(i)}}{\sum_{j=1}^{N_p} \tilde{w}_k^{(j)}}
 $$
 
 **4. Resample**<br/>when triggered by the ESS criterion, draw $N_p$ particles
-with replacement, proportional to weights.
+with replacement, proportional to weights, and reset every weight to $1/N_p$.
 
 ### State Estimate
 
@@ -121,7 +128,8 @@ Systematic resampling generates a single random offset
 $u_0 \sim \mathcal{U}(0, 1/N_p)$ and takes samples at
 $u_0 + j/N_p$ for $j = 0, \ldots, N_p - 1$ from the cumulative weight
 distribution [3, Sec. 3.2, pp. 181--182]. This has lower variance than
-multinomial resampling and is $O(N_p)$.
+multinomial resampling and is $O(N_p)$. It is ctrlpp's default; multinomial
+resampling, $N_p$ independent uniform draws, is also provided.
 
 ## Roughening
 
@@ -130,11 +138,15 @@ impoverishment. Roughening adds small random perturbations to maintain
 diversity [1, Sec. 15.4, pp. 478--480]:
 
 $$
-x_k^{(i)} \leftarrow x_k^{(i)} + \epsilon^{(i)}, \qquad \epsilon^{(i)} \sim \mathcal{N}(0, \sigma_r^2 I)
+x_k^{(i)} \leftarrow x_k^{(i)} + \epsilon^{(i)}, \qquad \epsilon^{(i)} \sim \mathcal{N}\!\left(0, \operatorname{diag}(\sigma_1^2, \ldots, \sigma_{n_x}^2)\right)
 $$
 
-where $\sigma_r$ is proportional to the spread of the particle cloud. This
-prevents the particle set from collapsing to a single point.
+where each $\sigma_d$ is proportional to the spread of the particle cloud in
+coordinate $d$. This prevents the particle set from collapsing to a single
+point. ctrlpp uses $\sigma_d = K E_d N_p^{-1/n_x}$, with $E_d$ the range
+(maximum minus minimum) of coordinate $d$ over the resampled set and $K$ the
+configured `roughening_scale`; a coordinate with zero range falls back to
+$\sigma_d = K \sqrt{Q_{dd}}$. Roughening is applied only after a resampling.
 
 ## Convergence and Curse of Dimensionality
 
@@ -147,7 +159,27 @@ required for a given accuracy grows exponentially with state dimension &mdash; t
 In practice, particle filters are most effective for low-dimensional state
 spaces (typically fewer than 6--10 dimensions). For higher dimensions,
 Rao-Blackwellization can be used to marginalize out linear sub-states
-analytically [1, Sec. 15.6, pp. 485--488].
+analytically [1, Sec. 15.6, pp. 485--488]; ctrlpp does not implement it.
+
+## What ctrlpp implements
+
+- The process model is $x_k = f(x_{k-1}, u_{k-1}) + w_k$ with
+  $w_k \sim \mathcal{N}(0, Q)$: the dynamics callable takes no noise input,
+  and the noise is additive Gaussian with a discrete covariance $Q$ drawn
+  once per particle per step. The general $f(x_k, u_k, w_k)$ above is not
+  supported.
+- The default likelihood is the Gaussian above with covariance $R$, including
+  its normalizer, on the plain difference $z_k - h(x_k^{(i)})$. Any other
+  measurement density, including one on a wrapped domain such as a bearing, is
+  supplied as a likelihood policy returning
+  $\log p(z_k \mid x_k^{(i)})$; see the
+  [likelihood policy](../api/estimation/particle-filter.md).
+- The prior is $\mathcal{N}(x_0, P_0)$.
+- Weights are kept as logarithms (normalized with log-sum-exp) or as linear
+  values. When no particle explains a measurement, the weights are reset to
+  uniform and the filter reports it.
+- The estimate is the weighted mean above or the highest-weight particle; no
+  mode estimate is formed.
 
 ## References
 

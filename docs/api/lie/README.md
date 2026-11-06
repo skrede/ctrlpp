@@ -1,12 +1,13 @@
 # Lie Groups
 
 Lie group utilities for rotation representations used by attitude-aware
-estimators. Currently provides SO(3) quaternion operations following the
-Hamilton convention with w-first user-facing representation.
+estimators. Provides SO(3) quaternion operations following the Hamilton
+convention with w-first user-facing representation; no other group is
+implemented.
 
 ## Types
 
-- [so3](so3.md)<br/> SO(3) rotation group: exp/log maps, compose, conjugate, normalize, skew
+- [so3](so3.md)<br/> SO(3) rotation group: exp/log maps, compose, conjugate, normalize, skew, w-first serialization
 
 ## When to use
 
@@ -18,4 +19,5 @@ between 3-vector perturbations and unit quaternions.
 ## Theory
 
 For the mathematical background, see
-[Attitude Estimation Theory](../../background/attitude-estimation.md).
+[SO(3) and Lie Groups](../../background/so3.md) and
+[Attitude Estimation](../../background/attitude-estimation.md).

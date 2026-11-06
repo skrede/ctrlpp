@@ -36,8 +36,10 @@ compactness, lack of singularities, and efficient algebra
 
 A unit quaternion $q = [q_w, q_x, q_y, q_z]^\top$ with
 $\lVert q \rVert = 1$ represents a rotation. The Hamilton convention defines
-the product such that quaternion multiplication corresponds to rotation
-composition in the same order [1, Sec. 7.1.3, pp. 218--220].
+the product such that quaternion multiplication corresponds to rotation-matrix
+multiplication in the same order, $R(p \otimes q) = R(p)\,R(q)$
+[1, Sec. 7.1.3, pp. 218--220]. ctrlpp uses this convention with the w-first
+order shown.
 
 The time evolution under body-frame angular velocity
 $\omega = [\omega_x, \omega_y, \omega_z]^\top$ is
@@ -47,13 +49,17 @@ $$
 \dot{q} = \frac{1}{2} q \otimes \begin{bmatrix} 0 \\ \omega \end{bmatrix}
 $$
 
-In discrete time with sampling period $T_s$, the first-order integration is:
+Holding $\omega_k$ constant over a sampling period $T_s$, the exact solution
+of this equation over the step is:
 
 $$
 q_{k+1} = q_k \otimes \exp\!\left(T_s\, \omega_k\right)
 $$
 
-where $\otimes$ denotes the Hamilton quaternion product.
+where $\otimes$ denotes the Hamilton quaternion product and $\exp$ is the
+quaternion exponential below, which takes the full rotation vector
+$T_s \omega_k$ and halves the angle itself. This is the integration every
+ctrlpp attitude filter performs, followed by a renormalization.
 
 ## Tangent Space and Lie Algebra
 
@@ -81,13 +87,21 @@ $$
 ### Logarithmic Map
 
 The inverse recovers the tangent vector from a quaternion
-[1, eq. (7.22), p. 231]:
+[1, eq. (7.22), p. 231]. Because $q$ and $-q$ are the same rotation, ctrlpp
+first flips $q$ to the hemisphere $q_w \ge 0$, then computes
 
 $$
-\log(q) = \frac{2 \arccos(q_w)}{\lVert q_{xyz} \rVert} \, q_{xyz}
+\log(q) = \frac{2\, \operatorname{atan2}(\lVert q_{xyz} \rVert, q_w)}{\lVert q_{xyz} \rVert} \, q_{xyz}
 $$
 
-with a sinc-expansion near $\theta = 0$ for numerical stability.
+so the result is unique and its norm, the rotation angle, lies in
+$[0, \pi]$. The `atan2` form equals $2 \arccos(q_w)$ for a unit quaternion
+but keeps its accuracy near $\theta = 0$, where $\arccos$ loses it. Below
+$\lVert q_{xyz} \rVert = 10^{-7}$ the limit $\log(q) = 2\, q_{xyz}$ is used.
+The filters align each quaternion with the reference before taking a
+difference, $\log(\hat{q}^{-1} \otimes q_i)$ with $q_i$ negated when
+$\hat{q} \cdot q_i < 0$, so a sigma point and its antipode give the same
+residual.
 
 ## Multiplicative EKF (MEKF)
 
@@ -95,7 +109,10 @@ The MEKF is the standard approach for quaternion-based attitude estimation.
 It maintains the attitude estimate as a unit quaternion but performs Kalman
 filtering on a 3-vector error state $\delta\theta$ in the tangent space. This
 avoids the over-parametrization of using a 4-dimensional quaternion state in
-the filter [3, pp. 311--317].
+the filter [3, pp. 311--317]. ctrlpp's MEKF also estimates a bias
+$\hat{b} \in \mathbb{R}^{N_B}$, $N_B \ge 3$, whose first three components
+are the gyroscope bias, so its error state is
+$[\delta\theta; \delta b] \in \mathbb{R}^{3 + N_B}$.
 
 ### Error-State Definition
 
@@ -106,31 +123,42 @@ $$
 \delta q = \hat{q}^{-1} \otimes q_{\text{true}}
 $$
 
-For small errors, $\delta q \approx [1, \; \delta\theta/2]^\top$, giving the
-3-vector error state $\delta\theta \in \mathbb{R}^3$.
+that is, $q_{\text{true}} = \hat{q} \otimes \exp(\delta\theta)$, a
+body-frame (right) error. For small errors,
+$\delta q \approx [1, \; \delta\theta/2]^\top$, giving the 3-vector error
+state $\delta\theta \in \mathbb{R}^3$.
 
 ### MEKF Prediction
 
-Propagate the reference quaternion using the measured angular velocity
+Propagate the reference quaternion using the bias-corrected angular velocity
+$\bar{\omega}_k = \omega_k - \hat{b}_{1:3}$
 [1, Sec. 7.4, pp. 240--245]:
 
 $$
-\hat{q}_{k|k-1} = \hat{q}_{k-1|k-1} \otimes \exp\!\left(\frac{T_s}{2} \omega_k\right)
+\hat{q}_{k|k-1} = \hat{q}_{k-1|k-1} \otimes \exp\!\left(T_s\, \bar{\omega}_k\right)
 $$
 
-Propagate the $3 \times 3$ error-state covariance:
+The bias is held. Propagate the $(3 + N_B) \times (3 + N_B)$ error-state
+covariance:
 
 $$
-P_{k|k-1} = F_k \, P_{k-1|k-1} \, F_k^\top + G_k \, Q \, G_k^\top
+P_{k|k-1} = F_k \, P_{k-1|k-1} \, F_k^\top + Q,
+\qquad
+F_k = \begin{bmatrix} C_k^\top & -T_s \left[ I_3 \;\; 0 \right] \\ 0 & I_{N_B} \end{bmatrix}
 $$
 
-where $F_k \approx I - T_s [\omega_k]_\times$ is the discrete error-state
-transition matrix and $G_k$ maps gyroscope noise to the error state.
+where $C_k$ is the rotation matrix of $\exp(T_s \bar{\omega}_k)$, so
+$C_k^\top \approx I - T_s [\bar{\omega}_k]_\times$ to first order. The
+attitude-bias block is the first-order term $-T_s I$; the exact discrete
+coefficient carries the right Jacobian of $T_s \bar{\omega}_k$, which ctrlpp
+does not form. $Q$ is a discrete covariance added once per step as given:
+ctrlpp has no noise-input matrix and does not scale $Q$ by $T_s$.
 
 ### MEKF Update
 
-Compute the Kalman gain for the 3-dimensional error state
-[1, Sec. 7.4, pp. 245--248]:
+Compute the Kalman gain for the error state
+[1, Sec. 7.4, pp. 245--248], with $H_k$ the Jacobian of $h$ with respect to
+$[\delta\theta; \delta b]$ at the nominal state:
 
 $$
 K_k = P_{k|k-1} \, H_k^\top (H_k \, P_{k|k-1} \, H_k^\top + R)^{-1}
@@ -139,37 +167,63 @@ $$
 Apply the error-state correction:
 
 $$
-\delta\theta_k = K_k \, (z_k - h(\hat{q}_{k|k-1}))
+\begin{bmatrix} \delta\theta_k \\ \delta b_k \end{bmatrix} = K_k \, (z_k - h(\hat{q}_{k|k-1}, \hat{b}_{k|k-1}))
 $$
 
 $$
-\hat{q}_{k|k} = \hat{q}_{k|k-1} \otimes \exp(\delta\theta_k)
+\hat{q}_{k|k} = \hat{q}_{k|k-1} \otimes \exp(\delta\theta_k),
+\qquad
+\hat{b}_{k|k} = \hat{b}_{k|k-1} + \delta b_k
 $$
 
-Reset the error state to zero and update the covariance:
+The quaternion is renormalized after the correction. Update the covariance
+in Joseph form:
 
 $$
-P_{k|k} = (I - K_k H_k) \, P_{k|k-1}
+P^{+} = (I - K_k H_k) \, P_{k|k-1} \, (I - K_k H_k)^\top + K_k R K_k^\top
 $$
 
-The key insight is that the error state is unconstrained in $\mathbb{R}^3$,
-so the standard Kalman filter applies without modification. The quaternion is
-re-normalized after each correction to maintain the unit-norm constraint.
+Folding $\delta\theta_k$ into the reference moves the frame the error state
+is expressed in, so after the error state is reset to zero the covariance is
+carried into the new frame:
+
+$$
+P_{k|k} = G_k \, P^{+} \, G_k^\top,
+\qquad
+G_k = \begin{bmatrix} I - \tfrac{1}{2} [\delta\theta_k]_\times & 0 \\ 0 & I \end{bmatrix}
+$$
+
+The error state is unconstrained in $\mathbb{R}^{3 + N_B}$, so the Kalman
+update itself is the standard one; the multiplicative correction and this
+reset are what the manifold adds.
 
 ## Manifold UKF
 
 The manifold UKF extends the unscented Kalman filter to SO(3) by performing
 sigma-point operations in the tangent space [4, pp. 108--114]:
 
-1. Generate sigma points in $\mathbb{R}^3$ from the error-state covariance
+1. Generate sigma points $\mathcal{X}_i$ around zero in $\mathbb{R}^3$ from
+   the tangent-space covariance
 2. Map to the manifold: $q_i = \hat{q} \otimes \exp(\mathcal{X}_i)$
-3. Propagate through nonlinear dynamics on the manifold
-4. Compute statistics in the tangent space:
-   $\delta_i = \log(\hat{q}^{-1} \otimes q_i')$
-5. Recover mean and covariance from the tangent-space residuals
+3. Propagate through nonlinear dynamics on the manifold, $q_i' = f(q_i, \omega)$
+4. Find the weighted geodesic (Karcher) mean $\bar{q}$ by iterating
+   $\bar{q} \leftarrow \bar{q} \otimes \exp\!\left(\sum_i W_i^m \log(\bar{q}^{-1} \otimes q_i')\right)$
+   from $q_0'$ until the step's norm falls below a tolerance or an iteration
+   budget runs out
+5. Recover the covariance from the tangent-space residuals
+   $\delta_i = \log(\bar{q}^{-1} \otimes q_i')$ about that mean,
+   $P = \sum_i W_i^c \delta_i \delta_i^\top + Q$
+
+The update draws fresh sigma points around the predicted attitude, forms
+$\hat{z} = \sum_i W_i^m h(q_i)$, the innovation covariance $S$ (plus $R$)
+and the cross-covariance from the residuals $\log(\hat{q}^{-1} \otimes q_i)$,
+corrects $\hat{q} \leftarrow \hat{q} \otimes \exp(K (z - \hat{z}))$ with
+$K = P_{xz} S^{-1}$, and carries $P - K S K^\top$ into the corrected frame with
+the same reset Jacobian as the MEKF. ctrlpp's manifold UKF estimates the
+attitude alone, with no bias state.
 
 This preserves the geometry of SO(3) throughout the sigma-point transform
-while avoiding the Jacobian computation required by the MEKF.
+while needing no measurement Jacobian.
 
 ## Complementary Filter
 
@@ -191,6 +245,22 @@ The attitude error $e_{\text{att}}$ is computed from the cross product between
 measured and predicted reference directions (gravity, magnetic north). The
 gains $K_p$ and $K_i$ set the crossover frequency between gyroscope and
 reference measurements.
+
+ctrlpp carries the integral as a bias estimate $\hat{b} = -K_i \int e\,dt$
+and takes each step as:
+
+$$
+\hat{b}_k = \hat{b}_{k-1} - K_i \, e_k \, T_s,
+\qquad
+q_k = q_{k-1} \otimes \exp\!\left(T_s \left(\omega_{\text{gyro}} - \hat{b}_k + K_p \, e_k\right)\right)
+$$
+
+with $e_k = \hat{a} \times \hat{R}^\top e_z$ for the accelerometer direction
+$\hat{a}$, plus, with a magnetometer direction $\hat{m}$,
+$\hat{m} \times \hat{R}^\top b$ where $h = \hat{R}\hat{m}$ and
+$b = [\sqrt{h_x^2 + h_y^2},\, 0,\, h_z]^\top$. The magnetic term is a full
+cross product, so it also corrects roll and pitch. A sensor reading of exactly
+zero contributes no term.
 
 Complementary filters are less optimal than the MEKF but require no covariance
 propagation, no matrix inversions, and have deterministic constant-time

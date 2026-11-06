@@ -2,16 +2,16 @@
 
 SO(3) Lie group primitives using Hamilton-convention unit quaternions. Provides free functions for exponential/logarithmic maps, quaternion composition, skew-symmetric matrix construction, and serialization. These primitives underpin the MEKF and manifold-UKF estimators.
 
-Convention: Hamilton convention throughout. Quaternion product `q1 * q2` corresponds to rotation `q1` followed by `q2`. User-facing serialization is w-first: `[w, x, y, z]`. Internally, Eigen stores quaternion coefficients in `[x, y, z, w]` order.
+Convention: Hamilton convention throughout, with `R(q1 * q2) = R(q1) R(q2)`: applied to a vector, `q1 * q2` rotates by `q2` and then by `q1` in the fixed frame, which read in the body frame is `q1` followed by `q2` about the axes `q1` produced. The attitude filters compose increments on the right, `q * exp(phi)`, so `phi` is a body-frame rotation vector. User-facing serialization is w-first: `[w, x, y, z]`. Internally, Eigen stores quaternion coefficients in `[x, y, z, w]` order.
 
 ## Header and Alias
 
 | Form | Header |
 |------|--------|
-| `ctrlpp::so3::*` (free functions) | `#include <ctrlpp/lie/so3.h>` |
+| `ctrlpp::so3::*` (free functions), `ctrlpp::so3_error` | `#include <ctrlpp/lie/so3.h>` |
 | (convenience) | `#include <ctrlpp/so3.h>` |
 
-All functions live in the `ctrlpp::so3` namespace.
+All functions live in the `ctrlpp::so3` namespace. Each takes a concrete `Vector<Scalar, 3>`, `Vector<Scalar, 4>` or `Eigen::Quaternion<Scalar>` and deduces `Scalar` from it, so an Eigen expression such as `omega * dt` is evaluated into a vector first (`Eigen::Vector3d step = omega * dt;` or `(omega * dt).eval()`); the expression type itself deduces nothing.
 
 ## Functions
 
@@ -22,7 +22,7 @@ template <ctrlpp_floating_scalar Scalar>
 Eigen::Quaternion<Scalar> exp(const Vector<Scalar, 3>& phi);
 ```
 
-Exponential map: rotation vector (angle-axis) to unit quaternion. Uses Rodrigues formula with Taylor expansion near zero for numerical stability.
+Exponential map: rotation vector (angle-axis) to unit quaternion, `[cos(theta/2), sin(theta/2) phi / theta]` with `theta = |phi|`. Below `theta = 1e-7` both parts take their Taylor series, `1 - theta^2/8` and `1/2 - theta^2/48`. The vector is divided by its largest component magnitude before its norm is formed, so a vector whose squared norm would overflow or underflow still maps correctly; the angle is reduced modulo `4 pi`, the period of the quaternion, and the result is normalized. The zero vector maps to the identity.
 
 ### log
 
@@ -31,7 +31,7 @@ template <typename Scalar>
 Vector<Scalar, 3> log(const Eigen::Quaternion<Scalar>& q);
 ```
 
-Logarithmic map: unit quaternion to rotation vector. Canonicalizes to the `w >= 0` hemisphere for unique output.
+Logarithmic map: unit quaternion to rotation vector, `2 atan2(|v|, w) v / |v|` for the vector part `v`. Because `q` and `-q` are the same rotation, the quaternion is first flipped to the `w >= 0` hemisphere, so `log(-q) == log(q)` and the norm, the rotation angle, lies in `[0, pi]`. At an angle of exactly `pi` (`w == 0`) nothing is flipped, so `q` and `-q` return the two opposite vectors of length `pi`, both of which name that rotation. Below `|v| = 1e-7` it returns `2 v`. The input is expected to be unit: the general branch is invariant to the quaternion's scale, the small-angle branch is not, and nothing is normalized or checked.
 
 ### compose
 
@@ -41,7 +41,7 @@ Eigen::Quaternion<Scalar> compose(const Eigen::Quaternion<Scalar>& q1,
                                   const Eigen::Quaternion<Scalar>& q2);
 ```
 
-Hamilton quaternion product: composes two rotations.
+Hamilton quaternion product, `q1 * q2`: composes two rotations under the convention above. The result is not renormalized.
 
 ### conjugate
 
@@ -134,7 +134,7 @@ template <typename Scalar>
 Eigen::Quaternion<Scalar> from_vec(const Vector<Scalar, 4>& v);
 ```
 
-Deserializes a w-first 4-vector `[w, x, y, z]` back to a quaternion.
+Deserializes a w-first 4-vector `[w, x, y, z]` back to a quaternion. The coefficients are copied as given; the result is not normalized.
 
 ## Usage Example
 
@@ -182,4 +182,5 @@ int main()
 
 - [estimation/mekf](../estimation/mekf.md)<br/> multiplicative EKF using SO(3)
 - [estimation/manifold-ukf](../estimation/manifold-ukf.md)<br/> manifold UKF using SO(3)
+- [background/so3](../../background/so3.md)<br/> SO(3), its Lie algebra and the exp/log maps
 - [background/attitude-estimation](../../background/attitude-estimation.md)<br/> attitude estimation theory
