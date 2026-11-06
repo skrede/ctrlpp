@@ -5,12 +5,13 @@ Trapezoidal velocity profile (LSPB) with three phases: acceleration, cruise, dec
 | Property | Value |
 |----------|-------|
 | **Header** | `ctrlpp/trajectory/trapezoidal_trajectory.h` (includes `ctrlpp/trajectory/trapezoidal_types.h`, which declares `acceleration_limit_policy` and `trapezoidal_disposition`) |
+| **Errors** | `trajectory_error`, declared in `ctrlpp/trajectory/trajectory_error.h` |
 
 ## Template Parameters
 
 | Parameter | Description |
 |-----------|-------------|
-| `Scalar` | Floating-point type |
+| `Scalar` | A type satisfying `ctrlpp_floating_scalar` (`std::floating_point`) |
 
 Output dimension is fixed at ND=1 (scalar trajectory).
 
@@ -133,7 +134,7 @@ The realized phase durations are still checked directly rather than inferred fro
 | `create` | `static expected<trapezoidal_trajectory, trajectory_error> create(config const&)` | The only construction path; reports an unrealizable command |
 | `evaluate` | `trajectory_point<Scalar, 1> evaluate(Scalar t) const` | Position, velocity, acceleration at time `t` |
 | `duration` | `Scalar duration() const` | Total duration `T = T_a + T_v + T_d` |
-| `is_triangular` | `bool is_triangular() const` | True if cruise phase duration is zero |
+| `is_triangular` | `bool is_triangular() const` | At construction, true when the triangular peak stays below `v_max`, so there is no cruise phase; after `rescale_to`, true when the rescaled cruise phase has zero duration |
 | `peak_velocity` | `Scalar peak_velocity() const` | Signed peak velocity in original frame |
 | `phase_durations` | `std::array<Scalar, 3> phase_durations() const` | `{T_accel, T_cruise, T_decel}` |
 | `disposition` | `trapezoidal_disposition<Scalar> const& disposition() const` | The commanded acceleration limit against the one this profile realizes |
@@ -181,12 +182,12 @@ The same caveat applies, for the same reason, to the ramp-through shape when the
 
 ### Rejections
 
-Checked in order:
+A request equal to the current duration succeeds first, before any rejection is tested. Otherwise, checked in order:
 
 | Condition | Error |
 |-----------|-------|
-| a duration below the current one | `trajectory_error::duration_shorter_than_current` |
 | NaN, infinite, or non-positive `T_new` | `trajectory_error::non_positive_duration` |
+| a duration below the current one | `trajectory_error::duration_shorter_than_current` |
 | a request below the arithmetic resolution of the expression that would answer it | `trajectory_error::unrepresentable_duration` |
 | a duration the displacement, limits, and boundary velocities cannot realize together | `trajectory_error::unreachable_duration` |
 
@@ -235,6 +236,20 @@ int main()
     }
 }
 ```
+
+## Limitations
+
+### A boundary velocity above v_max is refused, with zero tolerance by default
+
+`create` refuses a command with `boundary_velocity_exceeds_limit` when `abs(v0)` or `abs(v1)` exceeds `v_max` by more than `boundary_velocity_rounding_ops * eps * v_max`. The field defaults to 0, so by default the comparison carries no tolerance at all: a boundary velocity one unit in the last place above `v_max` is refused. The test runs before anything that depends on the displacement, so no displacement, however long, changes the verdict, and the error does not say by how much the limit was missed. A caller whose boundary velocity comes out of its own arithmetic (a velocity scaled to the limit, synchronized across axes, or read back from another segment) can land above `v_max` by rounding; it declares that arithmetic's rounding count in `boundary_velocity_rounding_ops`, and the profile then admits the excess and clamps the velocity to `+-v_max`.
+
+### Composing segments through via points is not supported
+
+The library computes no velocity at a via point. [`piecewise_trajectory`](piecewise-trajectory.md) places segments one after another in time and does not choose the velocity at which one segment ends and the next begins. A caller that composes point-to-point profiles through via points computes each join velocity itself and passes it as `v1` of one segment and `v0` of the next, and a join velocity meant to land on `v_max` that rounds above it meets the refusal above. Point-to-point composition with via points is not a supported workflow.
+
+### A zero displacement with unequal boundary speeds summing to a positive value is refused
+
+With `q0 == q1`, a command whose boundary speeds differ (`abs(v0) != abs(v1)`) and whose boundary velocities sum to a positive value is refused as `unreachable_boundary_velocity`, under either acceleration policy: the acceleration it would need is a division by the zero displacement. The other zero-displacement commands are realized, as Realizability above describes: equal boundary velocities, opposed ones of equal magnitude, and boundary velocities summing to a negative value, so `(v0, v1) = (-0.5, 0)` is built and `(0.5, 0)` is refused.
 
 ## See Also
 

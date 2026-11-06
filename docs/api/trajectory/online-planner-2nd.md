@@ -14,7 +14,7 @@ Unlike pre-computed trajectory segments, online planners are stateful filters wi
 
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
-| `Scalar` | arithmetic type | Numeric type (`float`, `double`, `long double`) |
+| `Scalar` | `ctrlpp_floating_scalar` (`std::floating_point`) | `float`, `double` or `long double` |
 
 ## Config
 
@@ -120,7 +120,7 @@ static ctrlpp::expected<online_planner_2nd, trajectory_error> create(config cons
 ctrlpp::expected<void, trajectory_error> update(Scalar target);
 ```
 
-Set a new target position and replan from the current state. Computes a time-optimal trapezoidal profile from (q, v) to (target, 0) respecting `v_max` and `a_max`. A velocity pointing away from the target, or too large to stop in the available distance, is braked to rest first and the move is replanned from the stopping point.
+Set a new target position and replan from the state the last `sample` recorded, starting at that sample's time. Computes a time-optimal trapezoidal profile from (q, v) to (target, 0) respecting `v_max` and `a_max`. A velocity pointing away from the target, or too large to stop in the available distance, is braked to rest first and the move is replanned from the stopping point.
 
 The command is rejected with `trajectory_error::non_finite_input` before any
 planner state changes when the target is NaN or infinite. For an accepted
@@ -142,7 +142,7 @@ Report what the last `update` (or `reset`) planned, against what it was commande
 trajectory_point<Scalar, 1> sample(Scalar t) const;
 ```
 
-Evaluate the planned trajectory at absolute time `t`. Returns position, velocity, and acceleration. Updates internal state for future `update()` calls. Call this once per control loop timestep.
+Evaluate the planned trajectory at absolute time `t`. Returns position, velocity, and acceleration. `sample` is `const` and still records the sampled state and the time `t`: the next `update` plans from that state, starting at that time. A `t` before the start of the current plan evaluates the plan's start. Call this once per control loop timestep.
 
 ### is_settled
 
@@ -150,7 +150,7 @@ Evaluate the planned trajectory at absolute time `t`. Returns position, velocity
 bool is_settled() const;
 ```
 
-Returns true when the planner has reached the target with zero velocity.
+Returns the settle test of the last `sample`: true when the distance to the target is below `position_settle_tol` and the speed below `velocity_settle_tol`. It is true after `create` and after `reset`, an `update` that plans a move sets it false until a sample passes the test, and an `update` whose disposition is `settled` sets it true.
 
 ### reset
 
@@ -158,7 +158,7 @@ Returns true when the planner has reached the target with zero velocity.
 void reset(Scalar q0);
 ```
 
-Reset state to position `q0` with zero velocity.
+Reset state to position `q0` with zero velocity, with the target at `q0` and the time reference at zero. `is_settled()` becomes true and `diagnostics()` reports `settled`.
 
 ## Profile Behavior
 
@@ -218,7 +218,7 @@ struct online_planner_diagnostics
 | `brake_duration` | Duration spent braking before the replan; zero when nothing was substituted |
 | `replan_start_position` | Position the replan starts from; the commanded start position when nothing was substituted |
 
-The type is shared with [online-planner-3rd](online-planner-3rd.md). This planner bounds no jerk, so it has no carry-velocity shape whose domain a commanded state can fall outside of: it reports `none` or `reversal_or_overshoot` and nothing else.
+The types are declared in `ctrlpp/trajectory/online_planner_diagnostics.h`, which the planner header includes, and are shared with [online-planner-3rd](online-planner-3rd.md). This planner bounds no jerk, so it has no carry-velocity shape whose domain a commanded state can fall outside of: it reports `none` or `reversal_or_overshoot` and nothing else.
 
 ## Usage Example
 

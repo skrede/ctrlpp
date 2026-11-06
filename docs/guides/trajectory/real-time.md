@@ -9,8 +9,9 @@ Generating trajectories on-the-fly with online planners.
 | [2nd-order](../../api/trajectory/online-planner-2nd.md) | Trapezoidal-like | v_max + a_max | Simpler real-time motion with acceleration limits |
 | [3rd-order](../../api/trajectory/online-planner-3rd.md) | Double-S-like | v_max + a_max + j_max | Smoother real-time motion with jerk limits |
 
-Both planners are designed for control-loop integration: call `update()` each
-cycle and get the current reference position, velocity, and acceleration.
+Both planners are designed for control-loop integration: call `update()` when
+the target changes, and `sample()` each cycle to get the current reference
+position, velocity, and acceleration.
 
 ## Quick Start: 2nd-Order Planner
 
@@ -20,28 +21,30 @@ updated with new targets at any time:
 ```cpp
 #include <ctrlpp/trajectory/online_planner_2nd.h>
 
+#include <cstdint>
 #include <iostream>
 
-// create validates the kinematic limits (finite and strictly positive,
-// because they divide in the planner math) and reports rejections through
-// ctrlpp::expected; unwrap after checking.
-auto planner_result =
-    ctrlpp::online_planner_2nd<double>::create({.v_max = 5.0, .a_max = 2.0});
-if (!planner_result.has_value()) {
-    std::cerr << "invalid planner limits\n";
-    return 1;
-}
-auto& planner = *planner_result;
+int main()
+{
+    // create validates the kinematic limits (finite and strictly positive,
+    // because they divide in the planner math) and reports rejections through
+    // ctrlpp::expected.
+    auto planner_result = ctrlpp::online_planner_2nd<double>::create({.v_max = 5.0, .a_max = 2.0});
+    if (!planner_result) {
+        std::cerr << "invalid planner limits\n";
+        return 1;
+    }
+    auto& planner = *planner_result;
+    if (!planner.update(10.0)) {
+        return 1;
+    }
 
-if (!planner.update(10.0).has_value()) {
-    return 1;
-}
-
-double dt = 0.01;  // 100 Hz control loop
-for (int i = 0; i < 500; ++i) {
-    double t = i * dt;
-    auto point = planner.sample(t);  // evaluate the profile at time t
-    std::cout << point.position[0] << "," << point.velocity[0] << "\n";
+    // A 100 Hz control loop samples the profile at the loop's own time.
+    constexpr double dt = 0.01;
+    for (std::int32_t i = 0; i < 500; ++i) {
+        auto const point = planner.sample(i * dt);
+        std::cout << point.position[0] << "," << point.velocity[0] << "\n";
+    }
 }
 ```
 
@@ -81,7 +84,7 @@ API pages.
 A separate and much tighter question decides whether a new command is worth
 computing at all, and it is not tunable. Those floors are derived from the type's
 rounding and the axis's own limits rather than fixed at an absolute distance, so
-they move with the limits: the same commanded femtometre is a real move on a
+they move with the limits: the same commanded femtometer is a real move on a
 finely limited axis and nothing at all on a coarse one. The gap between the
 arrival policy above and those floors is about seven decades on a unit-scale
 axis, and it is deliberate -- a policy tolerance must not decide what the planner

@@ -1,6 +1,6 @@
 # time_scaling
 
-Kinematic time scaling for normalized paths. Computes the minimum trajectory duration T from displacement magnitude, peak normalized path derivatives, and kinematic limits (v_max, a_max, j_max). 
+Kinematic time scaling for normalized paths. Computes the minimum trajectory duration T from displacement magnitude, peak normalized path derivatives, and kinematic limits (v_max, a_max, j_max).
 
 **NB: For use with elementary paths only &mdash; composite profiles (trapezoidal, double-S) solve timing internally.**
 
@@ -23,13 +23,15 @@ Scalar compute_min_duration(
 Computes minimum duration for a single DOF:
 
 ```
-T = max(h*dq_max/v_max, sqrt(h*ddq_max/a_max), cbrt(h*dddq_max/j_max))
+T = max(|h|*dq_max/v_max, sqrt(|h|*ddq_max/a_max), cbrt(|h|*dddq_max/j_max))
 ```
+
+`T` is in the time unit the limits are stated in: with `h` in meters and `v_max`, `a_max`, `j_max` in m/s, m/s^2 and m/s^3, it is in seconds. The function takes the magnitude of `h` itself, so a signed displacement may be passed. Nothing is validated and the result is a plain `Scalar`: a zero, negative or non-finite limit yields an infinite, NaN or otherwise meaningless duration rather than an error.
 
 | Parameter | Description |
 |-----------|-------------|
-| `h` | Displacement magnitude (\|q1 - q0\|) |
-| `peak_derivs` | `{dq_max, ddq_max, dddq_max}` from path's `*_peak_derivatives()` |
+| `h` | Displacement `q1 - q0`; its magnitude is used |
+| `peak_derivs` | `{dq_max, ddq_max, dddq_max}`, the peak magnitudes of the normalized path's derivatives with respect to normalized time, from the path's `*_peak_derivatives()` |
 | `v_max` | Maximum velocity limit |
 | `a_max` | Maximum acceleration limit |
 | `j_max` | Maximum jerk limit |
@@ -56,7 +58,7 @@ Scalar compute_min_duration_sync(
     Scalar v_max, Scalar a_max, Scalar j_max);
 ```
 
-Returns a single T (maximum of per-DOF durations) suitable for synchronizing all joints.
+Returns a single T (maximum of per-DOF durations) suitable for synchronizing all joints. `N` must be at least 1: with `N = 0` it dereferences the end of an empty array, which is undefined behavior.
 
 ## Usage Example
 

@@ -5,12 +5,13 @@ Double-S (7-segment) velocity profile with jerk-limited motion. Computes a time-
 | Property | Value |
 |----------|-------|
 | **Header** | `ctrlpp/trajectory/double_s_trajectory.h` |
+| **Errors** | `trajectory_error`, declared in `ctrlpp/trajectory/trajectory_error.h` |
 
 ## Template Parameters
 
 | Parameter | Description |
 |-----------|-------------|
-| `Scalar` | Floating-point type |
+| `Scalar` | A type satisfying `ctrlpp_floating_scalar` (`std::floating_point`) |
 
 Output dimension is fixed at ND=1 (scalar trajectory).
 
@@ -102,7 +103,7 @@ The profile degenerates when kinematic limits cannot all be reached:
 
 - **v_max not reached:** Cruise phase (segment 4) collapses to zero
 - **a_max not reached:** Constant-accel/decel phases (segments 2,6) collapse to zero
-- **Doubly degenerate:** Both v_max and a_max unreachable; purely jerk-limited profile with `T_j = cbrt(h / (2*j_max))`
+- **Doubly degenerate:** Both v_max and a_max unreachable; purely jerk-limited profile. At rest-to-rest its jerk time is `T_j = cbrt(h / (2*j_max))`, lowered where needed so that `j_max T_j` does not round above `a_max` and `j_max T_j^2` does not round above `v_max`
 
 ## Member Functions
 
@@ -113,7 +114,7 @@ The profile degenerates when kinematic limits cannot all be reached:
 | `evaluate` | `void evaluate(Scalar t, Scalar& q, Scalar& dq, Scalar& ddq) const` | The same three values written into caller-provided storage, bit-identical to the by-value form |
 | `duration` | `Scalar duration() const` | Total duration |
 | `is_degenerate` | `bool is_degenerate() const` | True if v_max or a_max not reached |
-| `peak_velocity` | `Scalar peak_velocity() const` | Actual peak velocity achieved |
+| `peak_velocity` | `Scalar peak_velocity() const` | Peak speed reached, in the positive-displacement frame: nonnegative for either direction of travel, unlike `trapezoidal_trajectory::peak_velocity`, which carries the sign of the displacement |
 | `phase_durations` | `std::array<Scalar, 7> phase_durations() const` | Per-segment durations |
 | `rescale_to` | `expected<void, trajectory_error> rescale_to(Scalar T_new)` | Rebuild under scaled limits for multi-axis sync |
 | `can_rescale_to` | `expected<void, trajectory_error> can_rescale_to(Scalar T_new) const` | Whether `rescale_to(T_new)` would succeed, without mutating |
@@ -128,15 +129,16 @@ The two boundary velocities are left **unscaled**. They are what the caller comm
 
 With both boundary velocities at rest the duration is exactly proportional to the reciprocal of the scale, so the scale is the ratio of the current duration to the requested one and a single rebuild settles it. With a nonzero boundary velocity that proportionality fails, and the scale is found by halving a bracket that runs from the scale at which the commanded boundary velocities themselves reach the scaled velocity limit up to the profile's own scale. Termination is bracket exhaustion, when the midpoint falls on an endpoint: no tolerance and no iteration cap. The worst case is derived rather than chosen. Halving an interval whose endpoints share a binary exponent reaches the spacing of the representable values after one step more than the significand width, which is 25 evaluations at single precision and 54 at double precision; a bracket spanning several exponents costs one further step per exponent spanned. A derivative step is not used: the duration carries real kinks where the segment shape flips, so a Newton step can leave the bracket, and bounding a safeguarded variant would require an iteration cap.
 
-Rejections, checked in order:
+A request equal to the current duration succeeds and changes nothing, before any rejection is tested; that is the path the slowest axis of a synchronized set always takes. Otherwise, checked in order:
 
 | Condition | Error |
 |-----------|-------|
-| a duration below the current one | `trajectory_error::duration_shorter_than_current` |
 | NaN, infinite, or non-positive `T_new` | `trajectory_error::non_positive_duration` |
-| a duration no admissible scale realizes | `trajectory_error::unreachable_duration` |
+| a duration below the current one | `trajectory_error::duration_shorter_than_current` |
+| a profile of zero duration, the standstill | `trajectory_error::unreachable_duration` |
+| a duration no admissible scale realizes, including a scaled command that `create` refuses for any reason | `trajectory_error::unreachable_duration` |
 
-A request equal to the current duration succeeds and changes nothing, which is the path the slowest axis of a synchronized set always takes. Because the boundary velocities stay fixed while the velocity limit falls, the reachable durations are bounded: the limit cannot drop below the speed the caller commanded the axis to enter or leave with.
+With a nonzero boundary velocity the reachable durations are bounded, because the boundary velocities stay fixed while the velocity limit falls: the limit cannot drop below the speed the caller commanded the axis to enter or leave with.
 
 `can_rescale_to()` runs the identical solve and discards the result. No closed-form reachability predicate exists for this family, so replaying the same deterministic computation is what makes the check and the commit agree, and it is what lets [`synchronize()`](synchronize.md) check every axis before it commits any of them.
 
@@ -166,6 +168,20 @@ int main()
     }
 }
 ```
+
+## Limitations
+
+### A boundary velocity above v_max is refused, with zero tolerance by default
+
+`create` refuses a command with `boundary_velocity_exceeds_limit` when `abs(v0)` or `abs(v1)` exceeds `v_max` by more than `boundary_velocity_rounding_ops * eps * v_max`. The field defaults to 0, so by default the comparison carries no tolerance at all: a boundary velocity one unit in the last place above `v_max` is refused. The test runs before anything that depends on the displacement, so no displacement, however long, changes the verdict, and the error does not say by how much the limit was missed. A caller whose boundary velocity comes out of its own arithmetic (a velocity scaled to the limit, synchronized across axes, or read back from another segment) can land above `v_max` by rounding; it declares that arithmetic's rounding count in `boundary_velocity_rounding_ops`, and the profile then admits the excess and clamps the velocity to `+-v_max`.
+
+### Composing segments through via points is not supported
+
+The library computes no velocity at a via point. [`piecewise_trajectory`](piecewise-trajectory.md) places segments one after another in time and does not choose the velocity at which one segment ends and the next begins. A caller that composes point-to-point profiles through via points computes each join velocity itself and passes it as `v1` of one segment and `v0` of the next, and a join velocity meant to land on `v_max` that rounds above it meets the refusal above. Point-to-point composition with via points is not a supported workflow.
+
+### A zero displacement is realized only from rest to rest
+
+With `q0 == q1`, `create` builds the standstill when both boundary velocities are zero and refuses every other command as `unreachable_boundary_velocity`, as Realizability above states. Unlike `trapezoidal_trajectory`, it builds no zero-displacement reversal.
 
 ## See Also
 

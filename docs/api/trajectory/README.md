@@ -6,9 +6,10 @@ Trajectory generation primitives for point-to-point motion, multi-point interpol
 
 Core types, concepts, and building blocks used by all trajectory primitives.
 
-- [trajectory](trajectory.md)<br/> Trajectory convenience header and concept
+- `ctrlpp/trajectory.h`<br/> Convenience header that includes every public trajectory header
+- [trajectory](trajectory.md)<br/> `trajectory` adapter and `make_trajectory`, which lift a normalized path into a timed trajectory segment
 - [trajectory-segment](trajectory-segment.md)<br/> `trajectory_segment` concept definition
-- [trajectory-types](trajectory-types.md)<br/> `trajectory_point`, `Vector` type aliases
+- [trajectory-types](trajectory-types.md)<br/> `trajectory_point`, `path_point`, and the `spline_error` and `trajectory_error` enumerations
 - [path-segment](path-segment.md)<br/> `path_segment` concept for geometric paths
 - [piecewise-path](piecewise-path.md)<br/> Piecewise path composition from path segments
 - [piecewise-trajectory](piecewise-trajectory.md)<br/> Piecewise trajectory composition from trajectory segments
@@ -18,7 +19,7 @@ Core types, concepts, and building blocks used by all trajectory primitives.
 
 Single-segment point-to-point motion primitives with analytical velocity profiles.
 
-- [trapezoidal-trajectory](trapezoidal-trajectory.md)<br/> Trapezoidal (bang-coast-bang) velocity profile
+- [trapezoidal-trajectory](trapezoidal-trajectory.md)<br/> Trapezoidal (bang-coast-bang) velocity profile; `acceleration_limit_policy` and `trapezoidal_disposition` from `ctrlpp/trajectory/trapezoidal_types.h`
 - [double-s-trajectory](double-s-trajectory.md)<br/> Double-S (jerk-limited) velocity profile
 - [modified-trap-trajectory](modified-trap-trajectory.md)<br/> Modified trapezoidal velocity profile
 - [modified-sin-trajectory](modified-sin-trajectory.md)<br/> Modified sinusoidal velocity profile

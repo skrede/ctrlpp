@@ -12,8 +12,8 @@ Adapter that lifts a normalized path (evaluating in [0,1]) into a physical traje
 | Parameter | Description |
 |-----------|-------------|
 | `Law` | Callable `(Scalar tau) -> path_point<Scalar>` |
-| `Scalar` | Floating-point type |
-| `ND` | Number of dimensions (`std::size_t`) |
+| `Scalar` | Floating-point type; the template does not constrain it |
+| `ND` | Number of dimensions (`std::size_t`); `make_trajectory` sets it to the `Rows` of its vectors |
 
 ## Kinematic Scaling
 
@@ -24,6 +24,14 @@ The adapter applies displacement and duration scaling to the normalized path out
 - **acceleration:** `h/T^2 * law(tau).ddq`
 
 where `h = q1 - q0`, `T = duration`, and `tau = clamp(t, 0, T) / T`.
+
+## Construction
+
+```cpp
+trajectory(Law law, Vector<Scalar, ND> q0, Vector<Scalar, ND> displacement, Scalar duration);
+```
+
+The constructor is public and validates nothing: it takes the displacement rather than the end position, and a non-finite or non-positive duration is stored as given, so `evaluate` divides by it. `make_trajectory` below is the checked path.
 
 ## Member Functions
 

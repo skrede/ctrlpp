@@ -14,7 +14,7 @@ Unlike pre-computed trajectory segments, online planners are stateful filters wi
 
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
-| `Scalar` | arithmetic type | Numeric type (`float`, `double`, `long double`) |
+| `Scalar` | `ctrlpp_floating_scalar` (`std::floating_point`) | `float`, `double` or `long double` |
 
 ## Config
 
@@ -122,7 +122,7 @@ static ctrlpp::expected<online_planner_3rd, trajectory_error> create(config cons
 ctrlpp::expected<void, trajectory_error> update(Scalar target);
 ```
 
-Set a new target position and replan from the current state. Computes a time-optimal double-S profile from (q, v, a) to (target, 0, 0) respecting `v_max`, `a_max`, and `j_max`. A same-direction move carries the current velocity through the profile (no full-stop dip); a velocity pointing away from the target, or too large to stop in the available distance, is braked to rest first and then replanned. "Too large to stop" is the carry-velocity shape's own displacement test, and the carried speed is exact by construction, so the shape refuses a command the planner admitted only through an arithmetic rejection. Such a state is braked to rest and replanned with `carry_velocity_shape_unavailable` reported.
+Set a new target position and replan from the state the last `sample` recorded, starting at that sample's time. Computes a time-optimal double-S profile from (q, v, a) to (target, 0, 0) respecting `v_max`, `a_max`, and `j_max`. A same-direction move carries the current velocity through the profile (no full-stop dip); a velocity pointing away from the target, or too large to stop in the available distance, is braked to rest first and then replanned. "Too large to stop" is the carry-velocity shape's own displacement test, and the carried speed is exact by construction, so the shape refuses a command the planner admitted only through an arithmetic rejection. Such a state is braked to rest and replanned with `carry_velocity_shape_unavailable` reported.
 
 The command is rejected with `trajectory_error::non_finite_input` before any
 planner state changes when the target is NaN or infinite. For an accepted
@@ -144,7 +144,9 @@ Report what the last `update` (or `reset`) planned, against what it was commande
 trajectory_point<Scalar, 1> sample(Scalar t) const;
 ```
 
-Evaluate the planned trajectory at absolute time `t`. Returns position, velocity, and acceleration. Updates internal state for future `update()` calls.
+Evaluate the planned trajectory at absolute time `t`. Returns position, velocity, and acceleration. `sample` is `const` and still records the sampled state and the time `t`: the next `update` plans from that state, starting at that time. A `t` before the start of the current plan evaluates the plan's start.
+
+During the cruise of a plan from rest the sampled speed is exactly `v_max`, not a rounded value above it. This was measured at `v_max = 1, a_max = 5, j_max = 50` with a move of 10 sampled every microsecond, and at `v_max = 40, a_max = 20, j_max = 100` and `v_max = 1e-3, a_max = 1e-2, j_max = 1e-1`: every sample with zero acceleration on the cruise returned `v_max` itself, from g++ 16.2.1 and clang 23.1.3 at `-O2`. A retarget from cruise therefore hands the carry-velocity shape a boundary velocity at, not above, its limit.
 
 ### is_settled
 
@@ -152,7 +154,7 @@ Evaluate the planned trajectory at absolute time `t`. Returns position, velocity
 bool is_settled() const;
 ```
 
-Returns true when the planner has reached the target with zero velocity and zero acceleration.
+Returns the settle test of the last `sample`: true when the distance to the target is below `position_settle_tol`, the speed below `velocity_settle_tol` and the acceleration below `acceleration_settle_tol`. It is true after `create` and after `reset`, an `update` that plans a move sets it false until a sample passes the test, and an `update` whose disposition is `settled` sets it true.
 
 ### reset
 
@@ -160,7 +162,7 @@ Returns true when the planner has reached the target with zero velocity and zero
 void reset(Scalar q0);
 ```
 
-Reset state to position `q0` with zero velocity and zero acceleration.
+Reset state to position `q0` with zero velocity and zero acceleration, with the target at `q0` and the time reference at zero. `is_settled()` becomes true and `diagnostics()` reports `settled`.
 
 ## Profile Behavior
 
@@ -243,7 +245,7 @@ if (planner.diagnostics().disposition
 }
 ```
 
-The type is shared with [online-planner-2nd](online-planner-2nd.md), which bounds no jerk and therefore never reports `carry_velocity_shape_unavailable`.
+The types are declared in `ctrlpp/trajectory/online_planner_diagnostics.h`, which the planner header includes, and are shared with [online-planner-2nd](online-planner-2nd.md), which bounds no jerk and therefore never reports `carry_velocity_shape_unavailable`.
 
 ## Usage Example
 

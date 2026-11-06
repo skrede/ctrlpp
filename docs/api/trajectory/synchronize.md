@@ -37,7 +37,7 @@ template <syncable_profile... Profiles>
 ctrlpp::expected<void, trajectory_error> synchronize(Profiles&... profiles);
 ```
 
-Synchronize a heterogeneous set of axis profiles. Finds the maximum duration across all profiles and retimes each to it.
+Synchronize a heterogeneous set of axis profiles. Finds the maximum duration across all profiles, compared in the `std::common_type_t` of their `scalar_type`s, and retimes each to it.
 
 ### synchronize (contiguous view)
 
@@ -46,7 +46,7 @@ template <syncable_profile Profile>
 ctrlpp::expected<void, trajectory_error> synchronize(std::span<Profile> profiles);
 ```
 
-Runtime-sized variant for a contiguous run of identical profile types. The view carries no ownership, so the same call serves a `std::vector`, a plain array, or a statically allocated buffer, and nothing on this path allocates. Construct the view at the call site:
+Runtime-sized variant for a contiguous run of identical profile types. The view carries no ownership, so the same call serves a `std::vector`, a plain array, or a statically allocated buffer, and nothing on this path allocates. An empty view returns success and touches nothing. Construct the view at the call site:
 
 ```cpp
 std::vector<ctrlpp::trapezoidal_trajectory<double>> axes = /* ... */;
@@ -55,7 +55,7 @@ auto const synced = ctrlpp::synchronize(std::span{axes});
 
 ## All or nothing
 
-Both overloads run in two passes. Every axis is first asked, through `can_rescale_to()`, whether it can reach the target duration; only once all of them have answered yes is any axis retimed. A rejection on any axis returns that axis's `trajectory_error` with nothing mutated, so a partially synchronized set is never handed back.
+Both overloads run in two passes. Every axis is first asked, through `can_rescale_to()`, whether it can reach the target duration; only once all of them have answered yes is any axis retimed. A rejection returns the `trajectory_error` of the first axis, in argument or view order, that refuses, with nothing mutated, so a partially synchronized set is never handed back.
 
 The two passes go through the same solve inside each profile, so the checking pass cannot pass an axis that the committing pass then fails. Neither pass builds an owning copy of anything, which is why the runtime-sized overload takes a view rather than a container.
 
