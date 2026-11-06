@@ -23,7 +23,7 @@ Scalar compute_min_duration(Scalar h, std::array<Scalar, 3> const& peak_derivs, 
 }
 
 // @cite biagiotti2009 -- Sec. 5.2.1, eq. (5.6), p.230
-// @cite biagiotti2009 -- Sec. 5.2.2 -- per-DOF timing extends scalar formulation to vector case
+// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 5.2.1, p.231
 template <typename Scalar, std::size_t N>
 std::array<Scalar, N> compute_min_duration(std::array<Scalar, N> const& h, std::array<Scalar, 3> const& peak_derivs, Scalar v_max, Scalar a_max, Scalar j_max)
 {

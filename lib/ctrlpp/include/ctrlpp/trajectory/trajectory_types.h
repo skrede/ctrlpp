@@ -1,7 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_TRAJECTORY_TRAJECTORY_TYPES_H
 #define HPP_GUARD_CTRLPP_TRAJECTORY_TRAJECTORY_TYPES_H
 
-// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 5.2.1, eq. (2.16)
+// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 5.2.1, eq. (5.5)-(5.6), p.230
 
 #include "ctrlpp/trajectory/trajectory_error.h"
 
@@ -12,7 +12,7 @@
 namespace ctrlpp
 {
 
-// @cite biagiotti2009 -- Sec. 2.1, eq. (2.1)-(2.3): position q(t), velocity q'(t), acceleration q''(t)
+// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 1.6, p.10
 // An aggregate without a constructor: designated initialization stores each field as it is computed, where a
 // member-wise constructor holds every argument until the call and grows the per-cycle evaluate frames.
 template <typename Scalar, std::size_t ND>

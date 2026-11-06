@@ -75,7 +75,7 @@ public:
         return {};
     }
 
-    // @cite biagiotti2009 -- Sec. 4.6.1
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4.1, eq. (3.30a)-(3.30g), p.88-89
     trajectory_point<Scalar, 1> sample(Scalar t) const
     {
         auto const dt = std::max(t - this->m_t_ref, Scalar{0});

@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_TRAJECTORY_TRAJECTORY_H
 
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
-// Machines and Robots", 2009, Sec. 5.2.1, eq. (2.16)-(2.17), p.34
+// Machines and Robots", 2009, Sec. 5.2.1, eq. (5.5)-(5.6), p.230
 
 #include "ctrlpp/trajectory/cycloidal_path.h"
 #include "ctrlpp/trajectory/trajectory_types.h"

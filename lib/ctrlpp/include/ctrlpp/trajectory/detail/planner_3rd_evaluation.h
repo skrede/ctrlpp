@@ -15,7 +15,7 @@ class planner_3rd_evaluation : protected planner_3rd_profile<Scalar>
 protected:
     using planner_3rd_profile<Scalar>::planner_3rd_profile;
 
-    // @cite biagiotti2009 -- Sec. 4.6.1
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4.1, eq. (3.30a)-(3.30g), p.88-89
     void evaluate_profile(Scalar dt, Scalar& q, Scalar& v, Scalar& a) const
     {
         if(this->m_phase_count == 0 || dt >= this->m_duration)

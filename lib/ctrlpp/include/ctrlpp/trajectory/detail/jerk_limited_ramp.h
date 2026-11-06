@@ -44,7 +44,7 @@ Scalar jerk_time_within_velocity(Scalar v_max, Scalar j_max)
 }
 
 // The rest-to-rest profile that reaches neither limit, h = 2 j_max T_j^3.
-// @cite biagiotti2009 -- Sec. 3.4.3, p.90-91
+// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4.3, Case 2.b, p.93
 template <typename Scalar>
 Scalar doubly_degenerate_jerk_time(Scalar h, Scalar v_max, Scalar a_max, Scalar j_max)
 {
@@ -70,7 +70,7 @@ Scalar no_cruise_peak(Scalar c, Scalar h, Scalar v_max, Scalar a_max, Scalar j_m
 
 // When the velocity change is too small to build the acceleration up to a_max, the constant-acceleration sub-segment
 // vanishes and the ramp peaks at j_max T_j. Both branches are exact closed forms, so no bound is ever lowered and retried.
-// @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.19)-(3.20), p.80
+// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4, eq. (3.19)-(3.22), p.81-82
 template <typename Scalar>
 velocity_ramp<Scalar> make_velocity_ramp(Scalar dv, Scalar a_max, Scalar j_max)
 {

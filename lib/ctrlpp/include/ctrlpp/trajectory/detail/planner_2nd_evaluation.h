@@ -13,7 +13,7 @@ class planner_2nd_evaluation : protected planner_2nd_profile<Scalar>
 protected:
     using planner_2nd_profile<Scalar>::planner_2nd_profile;
 
-    // @cite biagiotti2009 -- Sec. 4.6.2
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.2.7, eq. (3.13a)-(3.13c), p.71
     void evaluate_profile(Scalar dt, Scalar& q, Scalar& v, Scalar& a) const
     {
         if(this->m_duration <= Scalar{0} || dt >= this->m_duration)

@@ -41,7 +41,7 @@ protected:
 
     // Variable-structure approach: a nonzero acceleration is first nulled by a jerk phase, and a double-S is then
     // planned from the resulting state at zero acceleration.
-    // @cite biagiotti2009 -- Sec. 4.6.1, eq. (4.49)
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4, p.79-93
     void compute_profile()
     {
         this->m_phase_count = 0;
