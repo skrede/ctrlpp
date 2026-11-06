@@ -36,7 +36,7 @@ ctrlpp::golden_bound golden_workspace = ctrlpp::make_golden_bound();
 // cold figures are first executions after reset.
 void prove_instrument()
 {
-    if constexpr(ctrlpp::kAllocSensorPresent)
+    if constexpr(ctrlpp::alloc_sensor_present)
         ctrlpp::emit_allocation_canary(ctrlpp::run_alloc_canary());
     else
         ctrlpp::run_timing();
@@ -58,12 +58,12 @@ void run_loop(demo_type& demo)
     ctrlpp::alloc_sensor_reset();
     TickType_t next = xTaskGetTickCount();
     const TickType_t period = pdMS_TO_TICKS(20);
-    for(std::int32_t k = 0; k <= ctrlpp::kSteps; ++k)
+    for(std::int32_t k = 0; k <= ctrlpp::golden::steps; ++k)
     {
         ctrlpp::alloc_sensor_arm();
         const float u = demo.step();
         ctrlpp::alloc_sensor_disarm();
-        ctrlpp::emit_exact_row(k, {static_cast<float>(k * ctrlpp::kDt), demo.x[0], demo.x[1], u});
+        ctrlpp::emit_exact_row(k, {static_cast<float>(k * ctrlpp::golden::dt), demo.x[0], demo.x[1], u});
         vTaskDelayUntil(&next, period);
     }
 }
@@ -71,9 +71,9 @@ void run_loop(demo_type& demo)
 void run_families(const ctrlpp::window_figures& control)
 {
     ctrlpp::report_allocations(control);
-    ctrlpp::drive_family<ctrlpp::estimation_demo>("estimation", ctrlpp::kHostKalmanVelocityVariance, ctrlpp::estimation_tolerance<float>());
-    ctrlpp::drive_family<ctrlpp::dsp_demo>("dsp", ctrlpp::kHostBiquadOutput, ctrlpp::dsp_tolerance<float>());
-    ctrlpp::drive_family<ctrlpp::trajectory_demo>("trajectory", ctrlpp::kHostTrajectoryPosition, ctrlpp::trajectory_tolerance<float>());
+    ctrlpp::drive_family<ctrlpp::estimation_demo>("estimation", ctrlpp::golden::host_kalman_velocity_variance, ctrlpp::estimation_tolerance<float>());
+    ctrlpp::drive_family<ctrlpp::dsp_demo>("dsp", ctrlpp::golden::host_biquad_output, ctrlpp::dsp_tolerance<float>());
+    ctrlpp::drive_family<ctrlpp::trajectory_demo>("trajectory", ctrlpp::golden::host_trajectory_position, ctrlpp::trajectory_tolerance<float>());
     ctrlpp::report_absent_predictive();
 }
 
@@ -85,20 +85,20 @@ void run_report(demo_type& demo)
     run_families(control);
     const ctrlpp::golden_verdict verdict = ctrlpp::judge_golden(demo, golden_workspace);
     // ESP-IDF reports the high-water mark in bytes (vanilla FreeRTOS uses words).
-    ctrlpp::emit_stack("program", static_cast<std::uint32_t>(uxTaskGetStackHighWaterMark(nullptr)), ctrlpp::kControlTaskStackBytes);
+    ctrlpp::emit_stack("program", static_cast<std::uint32_t>(uxTaskGetStackHighWaterMark(nullptr)), ctrlpp::control_task_stack_bytes);
     ctrlpp::report_golden(demo, verdict, control);
     ESP_LOGI(TAG, "golden diff %s", verdict.pass ? "PASS" : "FAIL");
 
     // The stack probe starts only once the golden verdict is reported: its second pass ends in a deliberate
     // stack overflow that resets the chip, which would otherwise take the board down before this loop said
     // whether it agreed with the host.
-    if constexpr(ctrlpp::kStackProbeRuns)
+    if constexpr(ctrlpp::stack_probe_runs)
         ctrlpp::start_stack_probe();
 }
 
 void control_task(void*)
 {
-    if constexpr(!ctrlpp::kAllocSensorPresent)
+    if constexpr(!ctrlpp::alloc_sensor_present)
         ctrlpp::stop_task_watchdog();
     report_opening();
     auto demo = demo_type::make();
@@ -116,5 +116,5 @@ extern "C" void app_main()
     ctrlpp::telemetry_init();
     // Eigen working set + newlib %f formatting need far more than the ~3.5 KB
     // default app_main stack.
-    xTaskCreatePinnedToCore(control_task, "ctrlpp_loop", ctrlpp::kControlTaskStackBytes, nullptr, 5, nullptr, 0);
+    xTaskCreatePinnedToCore(control_task, "ctrlpp_loop", ctrlpp::control_task_stack_bytes, nullptr, 5, nullptr, 0);
 }

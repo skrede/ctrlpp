@@ -33,7 +33,7 @@ namespace detail
 {
 
 using analysis_matrix = Eigen::Matrix2d;
-using analysis_maps = std::array<analysis_matrix, kGoldenSteps>;
+using analysis_maps = std::array<analysis_matrix, golden::sample_count>;
 
 inline double infinity_norm(const analysis_matrix& m)
 {
@@ -47,7 +47,7 @@ inline double covariance_premise(const analysis_maps& joseph, const analysis_map
 {
     analysis_matrix later = analysis_matrix::Identity();
     double sum = 0.0;
-    for(std::size_t k = kGoldenSteps; k-- > 0;)
+    for(std::size_t k = golden::sample_count; k-- > 0;)
     {
         const double carried = infinity_norm(later);
         const double predicted = infinity_norm(later * joseph[k]);
@@ -74,7 +74,7 @@ inline double biquad_premise(const biquad_coeffs<double>& c)
     f << -c.a1, 1.0, -c.a2, 0.0;
     analysis_matrix power = analysis_matrix::Identity();
     double sum = 0.0;
-    for(std::size_t m = 0; m < kGoldenSteps; ++m)
+    for(std::size_t m = 0; m < golden::sample_count; ++m)
     {
         sum += infinity_norm(power);
         power = f * power;
@@ -95,7 +95,7 @@ inline family_analysis analyze_estimation(estimation_demo<double> demo)
     detail::analysis_matrix posterior = settings.P0;
     double scale = 0.0;
     double reference = 0.0;
-    for(std::size_t k = 0; k < kGoldenSteps; ++k)
+    for(std::size_t k = 0; k < golden::sample_count; ++k)
     {
         const detail::analysis_matrix prior = system.A * posterior * system.A.transpose() + settings.Q;
         const Eigen::Vector2d gain = prior * system.C.transpose() / (system.C * prior * system.C.transpose() + settings.R)(0, 0);
@@ -105,25 +105,25 @@ inline family_analysis analyze_estimation(estimation_demo<double> demo)
         reference = demo.step();
         posterior = demo.covariance();
     }
-    return {reference, scale, "largest covariance surrogate", scale, "propagated error norm sum", detail::covariance_premise(joseph, step), static_cast<double>(kGoldenSteps)};
+    return {reference, scale, "largest covariance surrogate", scale, "propagated error norm sum", detail::covariance_premise(joseph, step), static_cast<double>(golden::sample_count)};
 }
 
 inline family_analysis analyze_dsp(dsp_demo<double> demo)
 {
     double peak = 0.0;
     double reference = 0.0;
-    for(std::int32_t k = 0; k < static_cast<std::int32_t>(kGoldenSteps); ++k)
+    for(std::int32_t k = 0; k < static_cast<std::int32_t>(golden::sample_count); ++k)
     {
         reference = demo.step();
         peak = std::max({peak, std::abs(dsp_demo<double>::input(k)), std::abs(reference)});
     }
-    return {reference, biquad_scale(peak), "peak", peak, "power norm sum", detail::biquad_premise(demo.coefficients()), static_cast<double>(kGoldenSteps)};
+    return {reference, biquad_scale(peak), "peak", peak, "power norm sum", detail::biquad_premise(demo.coefficients()), static_cast<double>(golden::sample_count)};
 }
 
 inline family_analysis analyze_trajectory(trajectory_demo<double> demo)
 {
     double reference = 0.0;
-    for(std::size_t k = 0; k < kGoldenSteps; ++k)
+    for(std::size_t k = 0; k < golden::sample_count; ++k)
         reference = demo.step();
 
     const auto command = trajectory_demo<double>::command();

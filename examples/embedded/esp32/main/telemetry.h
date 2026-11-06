@@ -14,7 +14,7 @@
 namespace ctrlpp
 {
 
-inline constexpr std::size_t kLineBytes = 320;
+inline constexpr std::size_t line_bytes = 320;
 
 void telemetry_init();
 
@@ -30,9 +30,9 @@ void emit_counter_canary(counter_state state);
 
 void emit_header(claim_class claim);
 
-inline constexpr std::size_t kExactValues = column_count(claim_class::exact) - 1;
+inline constexpr std::size_t exact_values = column_count(claim_class::exact) - 1;
 
-void emit_exact_row(std::int32_t k, const std::array<float, kExactValues>& values);
+void emit_exact_row(std::int32_t k, const std::array<float, exact_values>& values);
 
 // The figures are raw: each carries the instrument overhead, which the report
 // publishes on its own rows. A region whose every sample wrapped prints a zero

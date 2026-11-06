@@ -25,7 +25,7 @@ namespace ctrlpp
 
 window_figures read_window() noexcept
 {
-    if constexpr(kAllocSensorPresent)
+    if constexpr(alloc_sensor_present)
         return {true, alloc_sensor_observed(), alloc_sensor_eigen_trips()};
     else
         return {false, 0, 0};
@@ -33,7 +33,7 @@ window_figures read_window() noexcept
 
 void report_allocations(const window_figures& figures)
 {
-    const std::uint32_t steps = static_cast<std::uint32_t>(kGoldenSteps);
+    const std::uint32_t steps = static_cast<std::uint32_t>(golden::sample_count);
     if(!figures.measured)
     {
         open_line(stream_tag::verdict);
@@ -47,7 +47,7 @@ void report_allocations(const window_figures& figures)
 
 void report_family(const family_result& result, const window_figures& figures)
 {
-    const std::uint32_t steps = static_cast<std::uint32_t>(kGoldenSteps);
+    const std::uint32_t steps = static_cast<std::uint32_t>(golden::sample_count);
     open_line(stream_tag::verdict);
     std::printf("family %s value=%.17g golden=%.17g departure=%.3e bound=%.3e verdict=%s", result.name, result.value, result.golden, result.departure, result.bound,
             result.pass ? "PASS" : "FAIL");
@@ -81,20 +81,20 @@ void report_predictive(const predictive_verdict& verdict)
 {
     open_line(stream_tag::verdict);
     std::printf("predictive stationarity_stops=%" PRIu32 " of %" PRIu32 " worst_gate=%.3e run_steps=%" PRIu32 " armed_steps=%" PRIu32 " premise=%s gate=%s\n",
-            predictive_run.stationarity_stops, static_cast<std::uint32_t>(kPredictiveRunSteps), verdict.worst_gate, static_cast<std::uint32_t>(kPredictiveRunSteps),
-            static_cast<std::uint32_t>(kGoldenSteps), verdict.premise ? "PASS" : "FAIL", verdict.gate ? "PASS" : "FAIL");
+            predictive_run.stationarity_stops, static_cast<std::uint32_t>(golden::predictive_run_steps), verdict.worst_gate, static_cast<std::uint32_t>(golden::predictive_run_steps),
+            static_cast<std::uint32_t>(golden::sample_count), verdict.premise ? "PASS" : "FAIL", verdict.gate ? "PASS" : "FAIL");
 }
 
 void construct_predictive()
 {
-    if constexpr(kStackWatermarkPresent)
+    if constexpr(stack_watermark_present)
         report_stack("predictive.construct", painted_pass([] { predictive_instance(); }));
 }
 
     #if CTRLPP_MCU_ALLOC_SENTINEL
 
 stack_step_region first_solve_stack{0, 0};
-stack_step_region steady_stack{kPredictiveWarmupSolves, kPredictiveRunSteps - 1};
+stack_step_region steady_stack{golden::predictive_warmup_solves, golden::predictive_run_steps - 1};
 
 // The stack regions open before the sensor arms and close after it disarms, so
 // neither instrument runs inside the other's window.
@@ -157,7 +157,7 @@ void drive_predictive_family()
     }
     const predictive_verdict verdict = judge_predictive(predictive_run, predictive_bound);
     report_predictive(verdict);
-    report_family({"predictive", verdict.cost, kHostPredictiveCost, verdict.departure, verdict.bound, verdict.pass}, figures);
+    report_family({"predictive", verdict.cost, golden::host_predictive_cost, verdict.departure, verdict.bound, verdict.pass}, figures);
 }
 
 #else

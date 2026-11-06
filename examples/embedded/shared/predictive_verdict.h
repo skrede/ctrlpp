@@ -25,11 +25,11 @@
 namespace ctrlpp
 {
 
-using predictive_workspace = closed_loop_bound<static_cast<int>(kPredictiveNx), static_cast<int>(kPredictiveNu), kPredictiveRunSteps>;
+using predictive_workspace = closed_loop_bound<static_cast<int>(golden::predictive_nx), static_cast<int>(golden::predictive_nu), golden::predictive_run_steps>;
 
 struct predictive_record
 {
-    std::array<double, kPredictiveRunSteps> certificate;
+    std::array<double, golden::predictive_run_steps> certificate;
     double cost;
     double worst_gate;
     std::uint32_t stationarity_stops;
@@ -48,12 +48,12 @@ struct predictive_verdict
 
 inline predictive_workspace make_predictive_workspace()
 {
-    const double dt = kPredictiveDt;
+    const double dt = golden::predictive_dt;
     Eigen::Matrix2d A;
     A << 1.0, dt, 0.0, 1.0;
     const Eigen::Vector2d B(0.0, dt);
     Eigen::RowVector2d K;
-    K << kHostPredictiveK0, kHostPredictiveK1;
+    K << golden::host_predictive_k0, golden::host_predictive_k1;
     return predictive_workspace(A, B, K, Eigen::Vector2d(1.0, 0.0));
 }
 
@@ -61,12 +61,12 @@ inline predictive_workspace make_predictive_workspace()
 // small; every term is non-negative, so its roundings are charged at the sum.
 inline double stage_cost(const Eigen::Vector2d& x, double u)
 {
-    return kPredictiveStateWeight * x.squaredNorm() + kPredictiveInputWeight * (u * u);
+    return golden::predictive_state_weight * x.squaredNorm() + golden::predictive_input_weight * (u * u);
 }
 
 constexpr double cost_roundings()
 {
-    return 2.0 * static_cast<double>(kPredictiveNx) + 3.0 + static_cast<double>(kPredictiveRunSteps);
+    return 2.0 * static_cast<double>(golden::predictive_nx) + 3.0 + static_cast<double>(golden::predictive_run_steps);
 }
 
 // Runs between solves, so nothing here falls inside an armed window. The gate
@@ -79,10 +79,10 @@ inline void observe(predictive_record& record, const Eigen::Vector2d& before, co
     const double x_inf = before.lpNorm<Eigen::Infinity>();
     const double z_inf = demo.controller().last_solution().lpNorm<Eigen::Infinity>();
     const double certified = input_certificate(z_inf, argmin_settings<double>{}.kkt_tol);
-    const double gain = std::abs(kHostPredictiveK0) + std::abs(kHostPredictiveK1);
-    const double law = static_cast<double>(kPredictiveNx) * predictive_gain_departure() * x_inf;
+    const double gain = std::abs(golden::host_predictive_k0) + std::abs(golden::host_predictive_k1);
+    const double law = static_cast<double>(golden::predictive_nx) * predictive_gain_departure() * x_inf;
     const double gate = certified + law + counted_departure_bound<double>(4.0, std::abs(u) + gain * x_inf);
-    const double departure = std::abs(u + kHostPredictiveK0 * before[0] + kHostPredictiveK1 * before[1]);
+    const double departure = std::abs(u + golden::host_predictive_k0 * before[0] + golden::host_predictive_k1 * before[1]);
     record.certificate[k] = certified * (1.0 + 2.0 * eps);
     record.worst_gate = std::max(record.worst_gate, departure / gate);
     record.cost += stage_cost(before, u);
@@ -90,11 +90,11 @@ inline void observe(predictive_record& record, const Eigen::Vector2d& before, co
         ++record.stationarity_stops;
 }
 
-// The first kPredictiveWarmupSolves steps walk the solver into steady state;
+// The first golden::predictive_warmup_solves steps walk the solver into steady state;
 // the rest are the window the board's figures cover.
 constexpr bool in_predictive_window(std::size_t k)
 {
-    return k >= static_cast<std::size_t>(kPredictiveWarmupSolves);
+    return k >= static_cast<std::size_t>(golden::predictive_warmup_solves);
 }
 
 // The hooks bracket the solve and the plant step alone, on every step, and are
@@ -106,7 +106,7 @@ ctrlpp::expected<void, solver_error> run_predictive(predictive_demo<double>& dem
     record = predictive_record{{}, 0.0, 0.0, 0};
     if(!demo.constructed())
         return ctrlpp::unexpected(solver_error::setup_incomplete);
-    for(std::size_t k = 0; k < kPredictiveRunSteps; ++k)
+    for(std::size_t k = 0; k < golden::predictive_run_steps; ++k)
     {
         const Eigen::Vector2d before = demo.state();
         enter(k);
@@ -123,16 +123,16 @@ ctrlpp::expected<void, solver_error> run_predictive(predictive_demo<double>& dem
 // d and input departures v at reference state norms X: with Q = q*I,
 // |x'Qx - y'Qy| <= nx*q*d*(2*X + d), and likewise r*v*(2*|K|*X + v) for R.
 template <class InputDeparture>
-double cost_departure(const predictive_workspace& workspace, const std::array<double, kPredictiveRunSteps + 1>& d, InputDeparture input)
+double cost_departure(const predictive_workspace& workspace, const std::array<double, golden::predictive_run_steps + 1>& d, InputDeparture input)
 {
     const auto& X = workspace.reference_state_norms();
-    const double nx = static_cast<double>(kPredictiveNx);
+    const double nx = static_cast<double>(golden::predictive_nx);
     const double gain = workspace.gain_norm();
     double total = 0.0;
-    for(std::size_t k = 0; k < kPredictiveRunSteps; ++k)
+    for(std::size_t k = 0; k < golden::predictive_run_steps; ++k)
     {
         const double v = input(k, X[k], d[k]);
-        total += nx * kPredictiveStateWeight * d[k] * (2.0 * X[k] + d[k]) + kPredictiveInputWeight * v * (2.0 * gain * X[k] + v);
+        total += nx * golden::predictive_state_weight * d[k] * (2.0 * X[k] + d[k]) + golden::predictive_input_weight * v * (2.0 * gain * X[k] + v);
     }
     return total;
 }
@@ -149,10 +149,10 @@ inline double host_cost_departure(predictive_workspace& workspace)
 {
     const double eps = std::numeric_limits<double>::epsilon();
     const double gain = workspace.gain_norm();
-    const double roundings = static_cast<double>(2 * kPredictiveNx - 1);
-    constexpr std::array<double, kPredictiveRunSteps> none{};
+    const double roundings = static_cast<double>(2 * golden::predictive_nx - 1);
+    constexpr std::array<double, golden::predictive_run_steps> none{};
     const auto input = [&](std::size_t, double X, double d) { return gain * d + counted_departure_bound<double>(roundings, gain * (X + d)); };
-    return cost_departure(workspace, workspace.input_departures(eps, none, 0.0), input) + cost_rounding(kHostPredictiveCost);
+    return cost_departure(workspace, workspace.input_departures(eps, none, 0.0), input) + cost_rounding(golden::host_predictive_cost);
 }
 
 // The board's run is charged the certified departure of every solve from the
@@ -162,17 +162,17 @@ inline predictive_verdict judge_predictive(const predictive_record& record, pred
 {
     const double eps = std::numeric_limits<double>::epsilon();
     const double gain = workspace.gain_norm();
-    const double law = static_cast<double>(kPredictiveNx) * predictive_gain_departure() * (1.0 + 2.0 * eps);
+    const double law = static_cast<double>(golden::predictive_nx) * predictive_gain_departure() * (1.0 + 2.0 * eps);
     const double host = host_cost_departure(workspace);
     const auto board_input = [&](std::size_t k, double X, double d) { return gain * d + record.certificate[k] + law * (X + d); };
     const double board = cost_departure(workspace, workspace.input_departures(eps, record.certificate, law), board_input);
 
     predictive_verdict verdict{};
-    verdict.premise = record.stationarity_stops == static_cast<std::uint32_t>(kPredictiveRunSteps);
+    verdict.premise = record.stationarity_stops == static_cast<std::uint32_t>(golden::predictive_run_steps);
     verdict.worst_gate = record.worst_gate;
     verdict.gate = record.worst_gate < 1.0;
     verdict.cost = record.cost;
-    verdict.departure = std::abs(record.cost - kHostPredictiveCost);
+    verdict.departure = std::abs(record.cost - golden::host_predictive_cost);
     verdict.bound = board + host + cost_rounding(record.cost);
     verdict.pass = verdict.premise && verdict.gate && within_bound(verdict.departure, verdict.bound);
     return verdict;

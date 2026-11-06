@@ -21,31 +21,31 @@ struct clock_plan
 // Revision Y reaches 400 MHz in VOS1, revision V 480 MHz in VOS0, the overdrive
 // scale (DS12117, general operating conditions). Any other revision keeps the
 // reset clock tree.
-constexpr std::uint32_t kRevisionY = 0x1003U;
-constexpr std::uint32_t kRevisionV = 0x2003U;
+constexpr std::uint32_t revision_y = 0x1003U;
+constexpr std::uint32_t revision_v = 0x2003U;
 
 // The core is VCO / 2 with VCO = 16 MHz * N, inside the wide range 192 to
 // 960 MHz; the AXI clock is the core's half, 240 or 200 MHz. Flash rows from
 // RM0433 Table 17, "FLASH recommended number of wait states and programming
 // delay": 4 WS and WRHIGHFREQ 2 up to 240 MHz in VOS0, 2 WS and 2 up to 210 MHz
 // in VOS1.
-constexpr clock_plan kRevisionVPlan = {60U, 4U, 2U, true};
-constexpr clock_plan kRevisionYPlan = {50U, 2U, 2U, false};
+constexpr clock_plan revision_v_plan = {60U, 4U, 2U, true};
+constexpr clock_plan revision_y_plan = {50U, 2U, 2U, false};
 
-constexpr std::uint32_t kPllM = 4U;
-constexpr std::uint32_t kPllP = 2U;
-constexpr std::uint32_t kInput8To16 = 3U;
-constexpr std::uint32_t kVoltageScale1 = 3U;
-constexpr std::uint32_t kSupplyConfig = PWR_CR3_SCUEN | PWR_CR3_LDOEN | PWR_CR3_BYPASS;
-constexpr std::uint32_t kPllShape = RCC_PLLCFGR_PLL1FRACEN | RCC_PLLCFGR_PLL1VCOSEL | RCC_PLLCFGR_PLL1RGE | RCC_PLLCFGR_DIVQ1EN | RCC_PLLCFGR_DIVR1EN;
-constexpr std::uint32_t kFlashTiming = FLASH_ACR_LATENCY | FLASH_ACR_WRHIGHFREQ;
+constexpr std::uint32_t pll_m = 4U;
+constexpr std::uint32_t pll_p = 2U;
+constexpr std::uint32_t input_8_to_16 = 3U;
+constexpr std::uint32_t voltage_scale_1 = 3U;
+constexpr std::uint32_t supply_config = PWR_CR3_SCUEN | PWR_CR3_LDOEN | PWR_CR3_BYPASS;
+constexpr std::uint32_t pll_shape = RCC_PLLCFGR_PLL1FRACEN | RCC_PLLCFGR_PLL1VCOSEL | RCC_PLLCFGR_PLL1RGE | RCC_PLLCFGR_DIVQ1EN | RCC_PLLCFGR_DIVR1EN;
+constexpr std::uint32_t flash_timing = FLASH_ACR_LATENCY | FLASH_ACR_WRHIGHFREQ;
 
 std::optional<clock_plan> plan_for(std::uint32_t revision) noexcept
 {
-    if(revision == kRevisionV)
-        return kRevisionVPlan;
-    if(revision == kRevisionY)
-        return kRevisionYPlan;
+    if(revision == revision_v)
+        return revision_v_plan;
+    if(revision == revision_y)
+        return revision_y_plan;
     return std::nullopt;
 }
 
@@ -54,8 +54,8 @@ std::optional<clock_plan> plan_for(std::uint32_t revision) noexcept
 bool lock_ldo_supply() noexcept
 {
     if((PWR->CR3 & PWR_CR3_SCUEN) == 0U)
-        return (PWR->CR3 & kSupplyConfig) == PWR_CR3_LDOEN;
-    PWR->CR3 = (PWR->CR3 & ~kSupplyConfig) | PWR_CR3_LDOEN;
+        return (PWR->CR3 & supply_config) == PWR_CR3_LDOEN;
+    PWR->CR3 = (PWR->CR3 & ~supply_config) | PWR_CR3_LDOEN;
     while((PWR->CSR1 & PWR_CSR1_ACTVOSRDY) == 0U)
     {
     }
@@ -73,7 +73,7 @@ void await_voltage() noexcept
 // __HAL_PWR_VOLTAGESCALING_CONFIG in STM32CubeH7's stm32h7xx_hal_pwr.h.
 void raise_voltage(bool overdrive) noexcept
 {
-    PWR->D3CR = (PWR->D3CR & ~PWR_D3CR_VOS) | (kVoltageScale1 << PWR_D3CR_VOS_Pos);
+    PWR->D3CR = (PWR->D3CR & ~PWR_D3CR_VOS) | (voltage_scale_1 << PWR_D3CR_VOS_Pos);
     await_voltage();
     if(!overdrive)
         return;
@@ -86,9 +86,9 @@ void raise_voltage(bool overdrive) noexcept
 
 void start_pll1(std::uint32_t n) noexcept
 {
-    RCC->PLLCKSELR = (RCC->PLLCKSELR & ~(RCC_PLLCKSELR_PLLSRC | RCC_PLLCKSELR_DIVM1)) | RCC_PLLCKSELR_PLLSRC_HSI | (kPllM << RCC_PLLCKSELR_DIVM1_Pos);
-    RCC->PLLCFGR = (RCC->PLLCFGR & ~kPllShape) | (kInput8To16 << RCC_PLLCFGR_PLL1RGE_Pos) | RCC_PLLCFGR_DIVP1EN;
-    RCC->PLL1DIVR = (RCC->PLL1DIVR & ~(RCC_PLL1DIVR_N1 | RCC_PLL1DIVR_P1)) | ((n - 1U) << RCC_PLL1DIVR_N1_Pos) | ((kPllP - 1U) << RCC_PLL1DIVR_P1_Pos);
+    RCC->PLLCKSELR = (RCC->PLLCKSELR & ~(RCC_PLLCKSELR_PLLSRC | RCC_PLLCKSELR_DIVM1)) | RCC_PLLCKSELR_PLLSRC_HSI | (pll_m << RCC_PLLCKSELR_DIVM1_Pos);
+    RCC->PLLCFGR = (RCC->PLLCFGR & ~pll_shape) | (input_8_to_16 << RCC_PLLCFGR_PLL1RGE_Pos) | RCC_PLLCFGR_DIVP1EN;
+    RCC->PLL1DIVR = (RCC->PLL1DIVR & ~(RCC_PLL1DIVR_N1 | RCC_PLL1DIVR_P1)) | ((n - 1U) << RCC_PLL1DIVR_N1_Pos) | ((pll_p - 1U) << RCC_PLL1DIVR_P1_Pos);
     RCC->CR |= RCC_CR_PLL1ON;
     while((RCC->CR & RCC_CR_PLL1RDY) == 0U)
     {
@@ -107,7 +107,7 @@ void set_bus_prescalers() noexcept
 
 void set_flash_wait_states(const clock_plan& plan) noexcept
 {
-    FLASH->ACR = (FLASH->ACR & ~kFlashTiming) | plan.flash_latency | (plan.flash_write_delay << FLASH_ACR_WRHIGHFREQ_Pos);
+    FLASH->ACR = (FLASH->ACR & ~flash_timing) | plan.flash_latency | (plan.flash_write_delay << FLASH_ACR_WRHIGHFREQ_Pos);
     while((FLASH->ACR & FLASH_ACR_LATENCY) != plan.flash_latency)
     {
     }
@@ -124,7 +124,7 @@ void switch_to_pll1() noexcept
 // usart3_console.cpp divides a 64 MHz kernel clock, which APB1 no longer is.
 void keep_console_on_hsi() noexcept
 {
-    RCC->D2CCIP2R = (RCC->D2CCIP2R & ~RCC_D2CCIP2R_USART28SEL) | (ctrlpp::kUsartKernelHsi << RCC_D2CCIP2R_USART28SEL_Pos);
+    RCC->D2CCIP2R = (RCC->D2CCIP2R & ~RCC_D2CCIP2R_USART28SEL) | (ctrlpp::usart_kernel_hsi << RCC_D2CCIP2R_USART28SEL_Pos);
 }
 
 void raise_core_clock(const clock_plan& plan) noexcept

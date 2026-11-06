@@ -34,7 +34,7 @@ const char* pll_source() noexcept
 const char* console_kernel() noexcept
 {
     const std::uint32_t selected = (RCC->D2CCIP2R & RCC_D2CCIP2R_USART28SEL) >> RCC_D2CCIP2R_USART28SEL_Pos;
-    return selected == 0U ? "pclk1" : selected == ctrlpp::kUsartKernelHsi ? "hsi" : "other";
+    return selected == 0U ? "pclk1" : selected == ctrlpp::usart_kernel_hsi ? "hsi" : "other";
 }
 
 }

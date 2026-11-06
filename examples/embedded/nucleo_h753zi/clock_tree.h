@@ -7,7 +7,7 @@ namespace ctrlpp
 {
 
 // The USART234578SEL code for hsi_ker_ck (RM0433, RCC_D2CCIP2R).
-inline constexpr std::uint32_t kUsartKernelHsi = 3U;
+inline constexpr std::uint32_t usart_kernel_hsi = 3U;
 
 // DBGMCU_IDC REV_ID (RM0433, DBGMCU chapter): 0x1003 is revision Y, 0x2003
 // revision V.

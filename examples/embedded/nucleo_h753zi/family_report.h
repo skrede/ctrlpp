@@ -48,7 +48,7 @@ void run_family(const char* name, Demo& demo, double golden, double bound)
     alloc_sensor_reset();
     alloc_sensor_arm();
     double value = 0.0;
-    for(std::size_t k = 0; k < kGoldenSteps; ++k)
+    for(std::size_t k = 0; k < golden::sample_count; ++k)
         value = demo.step();
     alloc_sensor_disarm();
     const double departure = std::abs(value - golden);

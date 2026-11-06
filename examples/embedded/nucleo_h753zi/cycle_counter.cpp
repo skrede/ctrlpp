@@ -10,8 +10,8 @@ namespace
 // The CoreSight software-lock key (Arm CoreSight Architecture Specification,
 // Lock Access Register). The core-support headers carry the register but not
 // the key.
-constexpr std::uint32_t kCoreSightUnlockKey = 0xC5ACCE55U;
-constexpr std::uint32_t kCoreSightLock = 0U;
+constexpr std::uint32_t coresight_unlock_key = 0xC5ACCE55U;
+constexpr std::uint32_t coresight_lock = 0U;
 
 // The trace block and the counter sit in the debug power domain, which a system
 // reset does not clear, so a previous image or a debugger can leave the counter
@@ -19,9 +19,9 @@ constexpr std::uint32_t kCoreSightLock = 0U;
 // alone.
 void force_counter_off() noexcept
 {
-    DWT->LAR = kCoreSightUnlockKey;
+    DWT->LAR = coresight_unlock_key;
     DWT->CTRL &= ~DWT_CTRL_CYCCNTENA_Msk;
-    DWT->LAR = kCoreSightLock;
+    DWT->LAR = coresight_lock;
     DCB->DEMCR &= ~DCB_DEMCR_TRCENA_Msk;
     __DSB();
 }
@@ -33,7 +33,7 @@ void force_counter_off() noexcept
 void run_enable_sequence() noexcept
 {
     DCB->DEMCR |= DCB_DEMCR_TRCENA_Msk;
-    DWT->LAR = kCoreSightUnlockKey;
+    DWT->LAR = coresight_unlock_key;
     DWT->CYCCNT = 0U;
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
     __DSB();

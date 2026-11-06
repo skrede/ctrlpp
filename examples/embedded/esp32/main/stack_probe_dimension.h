@@ -10,7 +10,7 @@
 namespace ctrlpp::probe
 {
 
-inline constexpr const char* kProbeTag = "ctrlpp_esp32";
+inline constexpr const char* probe_tag = "ctrlpp_esp32";
 
 // Returns once the dimension's own task, given stack bytes, has reported. Each dimension below is
 // instantiated in its own translation unit, generated from stack_probe_dimension.cpp.in by

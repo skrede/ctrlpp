@@ -12,9 +12,9 @@
 namespace
 {
 
-constexpr std::uint64_t kCounterStates = std::uint64_t{1} << ctrlpp::kCounterBits;
-constexpr std::uint64_t kMicrosecondsPerMs = 1000;
-constexpr std::uint64_t kMillisecondsPerSecond = 1000;
+constexpr std::uint64_t counter_states = std::uint64_t{1} << ctrlpp::counter_bits;
+constexpr std::uint64_t microseconds_per_ms = 1000;
+constexpr std::uint64_t milliseconds_per_second = 1000;
 
 static_assert(sizeof(TickType_t) == sizeof(std::uint32_t), "a mark stores the tick count in 32 bits");
 
@@ -28,7 +28,7 @@ std::uint32_t tick_now() noexcept
 // tick short of one.
 std::uint32_t wrap_ticks() noexcept
 {
-    return static_cast<std::uint32_t>(std::uint64_t{ctrlpp::cycle_wrap_ms()} * configTICK_RATE_HZ / kMillisecondsPerSecond);
+    return static_cast<std::uint32_t>(std::uint64_t{ctrlpp::cycle_wrap_ms()} * configTICK_RATE_HZ / milliseconds_per_second);
 }
 
 }
@@ -61,7 +61,7 @@ std::uint32_t cycle_sample() noexcept
 std::uint32_t cycle_wrap_ms() noexcept
 {
     const std::uint64_t ticks_per_us = std::max<std::uint32_t>(esp_rom_get_cpu_ticks_per_us(), 1U);
-    return static_cast<std::uint32_t>(kCounterStates / (ticks_per_us * kMicrosecondsPerMs));
+    return static_cast<std::uint32_t>(counter_states / (ticks_per_us * microseconds_per_ms));
 }
 
 counter_state prove_cycle_counter() noexcept

@@ -36,10 +36,10 @@ inline const char* describe(solver_error e)
 template <class Scalar>
 struct predictive_plant
 {
-    Vector<Scalar, kPredictiveNx> operator()(const Vector<Scalar, kPredictiveNx>& x, const Vector<Scalar, kPredictiveNu>& u) const
+    Vector<Scalar, golden::predictive_nx> operator()(const Vector<Scalar, golden::predictive_nx>& x, const Vector<Scalar, golden::predictive_nu>& u) const
     {
-        const Scalar dt = static_cast<Scalar>(kPredictiveDt);
-        return Vector<Scalar, kPredictiveNx>{x[0] + dt * x[1], x[1] + dt * u[0]};
+        const Scalar dt = static_cast<Scalar>(golden::predictive_dt);
+        return Vector<Scalar, golden::predictive_nx>{x[0] + dt * x[1], x[1] + dt * u[0]};
     }
 };
 
@@ -52,10 +52,10 @@ class predictive_demo
 
 public:
     using plant_type = predictive_plant<Scalar>;
-    using state_type = Vector<Scalar, kPredictiveNx>;
-    using input_type = Vector<Scalar, kPredictiveNu>;
-    using solver_type = argmin_solver<Scalar, argmin_nw_sqp, true, kPredictiveNv, kPredictiveMaxM>;
-    using controller_type = nmpc_static<Scalar, kPredictiveNx, kPredictiveNu, kPredictiveNh, solver_type, plant_type>;
+    using state_type = Vector<Scalar, golden::predictive_nx>;
+    using input_type = Vector<Scalar, golden::predictive_nu>;
+    using solver_type = argmin_solver<Scalar, argmin_nw_sqp, true, golden::predictive_nv, golden::predictive_max_m>;
+    using controller_type = nmpc_static<Scalar, golden::predictive_nx, golden::predictive_nu, golden::predictive_nh, solver_type, plant_type>;
 
     // The controller carries its solver workspace inline, about 42 KB here, so the factory's result
     // initializes the member in place; a refused configuration is a value the demo reports, not one it runs.
@@ -66,12 +66,12 @@ public:
     {
     }
 
-    static nmpc_config<Scalar, kPredictiveNx, kPredictiveNu> config()
+    static nmpc_config<Scalar, golden::predictive_nx, golden::predictive_nu> config()
     {
-        nmpc_config<Scalar, kPredictiveNx, kPredictiveNu> settings;
-        settings.horizon = static_cast<std::int32_t>(kPredictiveNh);
-        settings.Q = static_cast<Scalar>(kPredictiveStateWeight) * Matrix<Scalar, kPredictiveNx, kPredictiveNx>::Identity();
-        settings.R = static_cast<Scalar>(kPredictiveInputWeight) * Matrix<Scalar, kPredictiveNu, kPredictiveNu>::Identity();
+        nmpc_config<Scalar, golden::predictive_nx, golden::predictive_nu> settings;
+        settings.horizon = static_cast<std::int32_t>(golden::predictive_nh);
+        settings.Q = static_cast<Scalar>(golden::predictive_state_weight) * Matrix<Scalar, golden::predictive_nx, golden::predictive_nx>::Identity();
+        settings.R = static_cast<Scalar>(golden::predictive_input_weight) * Matrix<Scalar, golden::predictive_nu, golden::predictive_nu>::Identity();
         return settings;
     }
 

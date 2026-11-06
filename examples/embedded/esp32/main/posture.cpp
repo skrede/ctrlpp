@@ -22,9 +22,9 @@ namespace
 // The watchpoint makes up to 60 bytes of every task's stack unusable, so a stack
 // figure is only comparable with one taken under the same setting.
 #ifdef CONFIG_FREERTOS_WATCHPOINT_END_OF_STACK
-constexpr bool kStackWatchpoint = true;
+constexpr bool stack_watchpoint = true;
 #else
-constexpr bool kStackWatchpoint = false;
+constexpr bool stack_watchpoint = false;
 #endif
 
 const char* optimization() noexcept
@@ -42,9 +42,9 @@ const char* optimization() noexcept
 // checks; the timing image is built without them, the evidence image with them,
 // and a figure from one build is not a figure of the other.
 #ifdef NDEBUG
-constexpr bool kAssertions = false;
+constexpr bool assertions = false;
 #else
-constexpr bool kAssertions = true;
+constexpr bool assertions = true;
 #endif
 
 const char* scheduler_state() noexcept
@@ -85,12 +85,12 @@ namespace ctrlpp
 
 void emit_posture(const reset_cause& cause)
 {
-    char body[kLineBytes];
+    char body[line_bytes];
     std::snprintf(body, sizeof(body),
             "posture reset=%s reset_reason=%" PRId32 " reset_rom=%" PRIu32 " core_mhz=%" PRIu32 " cycle_bits=%" PRIu32 " cycle_wrap_ms=%" PRIu32
             " stack_watchpoint=%s assertions=%s optimize=%s compiler=gcc-%s idf=%s",
-            name_of(cause.event), cause.reason, cause.rom_code, esp_rom_get_cpu_ticks_per_us(), kCounterBits, cycle_wrap_ms(), kStackWatchpoint ? "on" : "off",
-            kAssertions ? "on" : "off", optimization(), __VERSION__, esp_get_idf_version());
+            name_of(cause.event), cause.reason, cause.rom_code, esp_rom_get_cpu_ticks_per_us(), counter_bits, cycle_wrap_ms(), stack_watchpoint ? "on" : "off",
+            assertions ? "on" : "off", optimization(), __VERSION__, esp_get_idf_version());
     send_line(stream_tag::meta, body);
     std::snprintf(body, sizeof(body),
             "schedule tick_hz=%" PRIu32 " task_core=%" PRId32 " task_priority=%" PRIu32 " scheduler=%s intr_enabled=0x%08" PRIx32 " task_wdt=%s code=%s flash_mode=%s flash_freq=%s",

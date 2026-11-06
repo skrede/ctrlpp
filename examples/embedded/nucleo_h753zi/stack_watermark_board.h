@@ -10,7 +10,7 @@ namespace ctrlpp
 
 // The evidence image measures its stack. The timing image paints nothing, so
 // the code it times runs without the instrument beside it.
-inline constexpr bool kStackWatermarkPresent = CTRLPP_MCU_ALLOC_SENTINEL != 0;
+inline constexpr bool stack_watermark_present = CTRLPP_MCU_ALLOC_SENTINEL != 0;
 
 struct stack_window
 {

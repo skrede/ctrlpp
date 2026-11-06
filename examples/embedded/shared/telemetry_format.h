@@ -21,14 +21,14 @@ template <binary_float T>
 using bit_pattern_t = std::conditional_t<sizeof(T) == sizeof(std::uint64_t), std::uint64_t, std::uint32_t>;
 
 template <binary_float T>
-inline constexpr std::size_t kBitsTextLength = 2 * sizeof(T) + 1;
+inline constexpr std::size_t bits_text_length = 2 * sizeof(T) + 1;
 
 // Renders the object representation rather than the value, so values that
 // compare equal but differ in bits (zero and negative zero) render differently.
 // A hexadecimal-float conversion would also be lossless, but whether this leg's
 // trimmed printf supports one is unverified, and this needs no C library at all.
 template <binary_float T>
-constexpr std::string_view render_bits(T value, std::span<char, kBitsTextLength<T>> text) noexcept
+constexpr std::string_view render_bits(T value, std::span<char, bits_text_length<T>> text) noexcept
 {
     constexpr std::string_view digits = "0123456789ABCDEF";
     auto pattern = std::bit_cast<bit_pattern_t<T>>(value);
@@ -50,7 +50,7 @@ enum class stream_tag : std::uint8_t
     verdict
 };
 
-inline constexpr std::array<stream_tag, 5> kStreamTags{stream_tag::meta, stream_tag::canary, stream_tag::exact, stream_tag::spread, stream_tag::verdict};
+inline constexpr std::array<stream_tag, 5> stream_tags{stream_tag::meta, stream_tag::canary, stream_tag::exact, stream_tag::spread, stream_tag::verdict};
 
 constexpr std::string_view tag_text(stream_tag tag) noexcept
 {
@@ -87,7 +87,7 @@ struct claim_field
 
 // Each class block's header lists its fields in this order, and its first field
 // keys the rows: the loop index for the exact block, the region for the spread.
-inline constexpr std::array<claim_field, 16> kClaimFields{{{"k", claim_class::exact}, {"t_s", claim_class::exact}, {"x0", claim_class::exact}, {"x1", claim_class::exact},
+inline constexpr std::array<claim_field, 16> claim_fields{{{"k", claim_class::exact}, {"t_s", claim_class::exact}, {"x0", claim_class::exact}, {"x1", claim_class::exact},
         {"u", claim_class::exact}, {"region", claim_class::spread}, {"regime", claim_class::spread}, {"n", claim_class::spread}, {"n_basis", claim_class::spread},
         {"block", claim_class::spread}, {"raw_min", claim_class::spread}, {"raw_median", claim_class::spread}, {"raw_max", claim_class::spread}, {"max_at", claim_class::spread},
         {"per_iteration_raw_max", claim_class::spread}, {"wraps", claim_class::spread}}};
@@ -95,7 +95,7 @@ inline constexpr std::array<claim_field, 16> kClaimFields{{{"k", claim_class::ex
 constexpr std::size_t column_count(claim_class claim) noexcept
 {
     std::size_t count = 0;
-    for(const claim_field& field : kClaimFields)
+    for(const claim_field& field : claim_fields)
         count += field.claim == claim ? 1U : 0U;
     return count;
 }

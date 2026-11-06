@@ -61,7 +61,7 @@ template <class Scalar>
 class estimation_demo
 {
 public:
-    using filter_type = kalman_filter<Scalar, kKalmanNx, 1, kKalmanNy>;
+    using filter_type = kalman_filter<Scalar, golden::kalman_nx, 1, golden::kalman_ny>;
     using input_type = typename filter_type::input_vector_t;
     using output_type = typename filter_type::output_vector_t;
     using covariance_type = typename filter_type::cov_matrix_t;
@@ -78,7 +78,7 @@ public:
     // refused update returns NaN, which no bound admits.
     Scalar step()
     {
-        const Scalar position = static_cast<Scalar>(m_index) * static_cast<Scalar>(kDt);
+        const Scalar position = static_cast<Scalar>(m_index) * static_cast<Scalar>(golden::dt);
         ++m_index;
         m_filter.predict(input_type::Zero());
         if(!m_filter.update(output_type{position}).has_value())
@@ -90,7 +90,7 @@ public:
 
     static typename filter_type::system_t plant()
     {
-        const Scalar dt = static_cast<Scalar>(kDt);
+        const Scalar dt = static_cast<Scalar>(golden::dt);
 
         typename filter_type::system_t system{};
         system.A << Scalar{1}, dt, Scalar{0}, Scalar{1};
@@ -101,9 +101,9 @@ public:
     }
 
     // Dyadic entries, so the configuration rounds nothing at either precision.
-    static kalman_config<Scalar, kKalmanNx, 1, kKalmanNy> config()
+    static kalman_config<Scalar, golden::kalman_nx, 1, golden::kalman_ny> config()
     {
-        kalman_config<Scalar, kKalmanNx, 1, kKalmanNy> settings{};
+        kalman_config<Scalar, golden::kalman_nx, 1, golden::kalman_ny> settings{};
         settings.Q << Scalar{1} / Scalar{1024}, Scalar{0}, Scalar{0}, Scalar{1} / Scalar{16};
         settings.R << Scalar{1};
         settings.x0.setZero();

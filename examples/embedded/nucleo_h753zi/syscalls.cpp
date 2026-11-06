@@ -21,14 +21,14 @@ void usart3_write(std::span<const char> text) noexcept;
 namespace
 {
 
-constexpr int kConsoleDescriptors = 3;
-constexpr pid_t kImageProcess = 1;
+constexpr int console_descriptors = 3;
+constexpr pid_t image_process = 1;
 
-std::array<bool, kConsoleDescriptors> console_open{true, true, true};
+std::array<bool, console_descriptors> console_open{true, true, true};
 
 bool is_console(int descriptor) noexcept
 {
-    return descriptor >= 0 && descriptor < kConsoleDescriptors && console_open[static_cast<std::size_t>(descriptor)];
+    return descriptor >= 0 && descriptor < console_descriptors && console_open[static_cast<std::size_t>(descriptor)];
 }
 
 int refuse(int code) noexcept
@@ -86,13 +86,13 @@ extern "C" int _isatty(int descriptor)
 
 extern "C" pid_t _getpid()
 {
-    return kImageProcess;
+    return image_process;
 }
 
 // Every signal's action on this image is to stop it, as abort's SIGABRT does.
 extern "C" int _kill(pid_t process, int signal)
 {
-    if(process != kImageProcess)
+    if(process != image_process)
         return refuse(ESRCH);
     if(signal < 0 || signal >= NSIG)
         return refuse(EINVAL);

@@ -67,7 +67,7 @@ public:
 
     Scalar step()
     {
-        const Scalar t = static_cast<Scalar>(m_index) * static_cast<Scalar>(kDt);
+        const Scalar t = static_cast<Scalar>(m_index) * static_cast<Scalar>(golden::dt);
         ++m_index;
         Scalar position{};
         Scalar velocity{};

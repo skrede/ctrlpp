@@ -45,7 +45,7 @@ void halt() noexcept
 // cold figures are first executions after reset.
 void prove_instrument()
 {
-    if constexpr(ctrlpp::kAllocSensorPresent)
+    if constexpr(ctrlpp::alloc_sensor_present)
         ctrlpp::emit_allocation_canary(ctrlpp::run_alloc_canary());
     else
         ctrlpp::run_timing();
@@ -57,12 +57,12 @@ void run_loop(demo_type& demo)
 {
     ctrlpp::emit_header(ctrlpp::claim_class::exact);
     ctrlpp::alloc_sensor_reset();
-    for(std::int32_t k = 0; k <= ctrlpp::kSteps; ++k)
+    for(std::int32_t k = 0; k <= ctrlpp::golden::steps; ++k)
     {
         ctrlpp::alloc_sensor_arm();
         const double u = demo.step();
         ctrlpp::alloc_sensor_disarm();
-        ctrlpp::emit_exact_row(k, {k * ctrlpp::kDt, demo.x[0], demo.x[1], u});
+        ctrlpp::emit_exact_row(k, {k * ctrlpp::golden::dt, demo.x[0], demo.x[1], u});
     }
 }
 
@@ -72,8 +72,8 @@ void report_golden(const demo_type& demo, const ctrlpp::golden_verdict& verdict,
     ctrlpp::open_line(ctrlpp::stream_tag::verdict);
     std::printf("gain check %s: dev = [%.3e, %.3e], tol = %.3e\n", verdict.gain_pass ? "PASS" : "FAIL", verdict.gain_departure[0], verdict.gain_departure[1], verdict.gain_tolerance);
     ctrlpp::open_line(ctrlpp::stream_tag::verdict);
-    std::printf("settling: final |x| = %.6e (host = %.6e, err = %.3e, tol = %.3e)\n", final_norm, ctrlpp::kHostFinalNorm, verdict.norm_departure, verdict.norm_tolerance);
-    ctrlpp::report_family({"control", final_norm, ctrlpp::kHostFinalNorm, verdict.norm_departure, verdict.norm_tolerance, verdict.pass}, figures);
+    std::printf("settling: final |x| = %.6e (host = %.6e, err = %.3e, tol = %.3e)\n", final_norm, ctrlpp::golden::host_final_norm, verdict.norm_departure, verdict.norm_tolerance);
+    ctrlpp::report_family({"control", final_norm, ctrlpp::golden::host_final_norm, verdict.norm_departure, verdict.norm_tolerance, verdict.pass}, figures);
     ctrlpp::open_line(ctrlpp::stream_tag::verdict);
     std::printf("golden diff %s (gain %s, final norm %s)\n", verdict.pass ? "PASS" : "FAIL", verdict.gain_pass ? "PASS" : "FAIL", verdict.norm_pass ? "PASS" : "FAIL");
 }
@@ -110,9 +110,9 @@ int main()
     run_loop(*demo);
     const ctrlpp::window_figures control = ctrlpp::read_window();
     ctrlpp::report_allocations(control);
-    ctrlpp::drive_family<ctrlpp::estimation_demo>("estimation", ctrlpp::kHostKalmanVelocityVariance, ctrlpp::estimation_tolerance<double>());
-    ctrlpp::drive_family<ctrlpp::dsp_demo>("dsp", ctrlpp::kHostBiquadOutput, ctrlpp::dsp_tolerance<double>());
-    ctrlpp::drive_family<ctrlpp::trajectory_demo>("trajectory", ctrlpp::kHostTrajectoryPosition, ctrlpp::trajectory_tolerance<double>());
+    ctrlpp::drive_family<ctrlpp::estimation_demo>("estimation", ctrlpp::golden::host_kalman_velocity_variance, ctrlpp::estimation_tolerance<double>());
+    ctrlpp::drive_family<ctrlpp::dsp_demo>("dsp", ctrlpp::golden::host_biquad_output, ctrlpp::dsp_tolerance<double>());
+    ctrlpp::drive_family<ctrlpp::trajectory_demo>("trajectory", ctrlpp::golden::host_trajectory_position, ctrlpp::trajectory_tolerance<double>());
     ctrlpp::drive_predictive_family();
     const ctrlpp::golden_verdict verdict = ctrlpp::judge_golden(*demo, golden_workspace);
     ctrlpp::report_stack("program", ctrlpp::read_program_stack());

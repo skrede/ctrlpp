@@ -18,7 +18,7 @@ struct canary_verdict
 // The evidence image carries the sensor. The timing image is built without it,
 // keeps arm, disarm and reset as no-ops so the run is the same, and has no
 // count to read: its allocation figures are reported as unmeasured, not zero.
-inline constexpr bool kAllocSensorPresent = CTRLPP_MCU_ALLOC_SENTINEL != 0;
+inline constexpr bool alloc_sensor_present = CTRLPP_MCU_ALLOC_SENTINEL != 0;
 
 // The C++ allocation operators' route to the C library's allocator: counted
 // and past the wrapper in the evidence image, the plain allocator otherwise.

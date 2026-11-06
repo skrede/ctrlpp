@@ -14,7 +14,7 @@ namespace ctrlpp
 {
 
 // The largest sample set any region records: one warm repeat per golden step.
-inline constexpr std::size_t kTimingCapacity = kGoldenSteps;
+inline constexpr std::size_t timing_capacity = golden::sample_count;
 
 struct cycle_distribution
 {
@@ -82,7 +82,7 @@ public:
     }
 
 private:
-    std::array<std::uint32_t, kTimingCapacity> m_cycles;
+    std::array<std::uint32_t, timing_capacity> m_cycles;
     std::uint32_t m_n;
     std::uint32_t m_wraps;
     std::uint32_t m_max_at;

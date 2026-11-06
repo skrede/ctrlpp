@@ -32,10 +32,10 @@ namespace
 std::atomic<bool> armed{false};
 std::atomic<std::uint32_t> allocations{0};
 
-constexpr std::size_t kCanaryBytes = sizeof(double);
+constexpr std::size_t canary_bytes = sizeof(double);
 // A dynamic-size vector always takes heap storage, so one element is enough.
-constexpr Eigen::Index kCanaryElements = 1;
-constexpr std::uint32_t kCanaryAllocations = 3;
+constexpr Eigen::Index canary_elements = 1;
+constexpr std::uint32_t canary_allocations = 3;
 
 void count_allocation() noexcept
 {
@@ -134,12 +134,12 @@ canary_verdict run_alloc_canary() noexcept
 {
     alloc_sensor_reset();
     alloc_sensor_arm();
-    void* c_block = std::malloc(kCanaryBytes);
-    void* cpp_block = ::operator new(kCanaryBytes);
+    void* c_block = std::malloc(canary_bytes);
+    void* cpp_block = ::operator new(canary_bytes);
     escape(c_block);
     escape(cpp_block);
     {
-        Eigen::VectorXd eigen_block = Eigen::VectorXd::Ones(kCanaryElements);
+        Eigen::VectorXd eigen_block = Eigen::VectorXd::Ones(canary_elements);
         escape(eigen_block.data());
     }
     alloc_sensor_disarm();
@@ -148,7 +148,7 @@ canary_verdict run_alloc_canary() noexcept
     const std::uint32_t eigen = alloc_sensor_eigen_trips();
     ::operator delete(cpp_block);
     std::free(c_block);
-    return {observed == kCanaryAllocations && eigen > 0, observed, kCanaryAllocations, eigen};
+    return {observed == canary_allocations && eigen > 0, observed, canary_allocations, eigen};
 }
 
 #else

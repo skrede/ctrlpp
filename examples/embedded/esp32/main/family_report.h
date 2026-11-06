@@ -63,7 +63,7 @@ void drive_family(const char* name, double golden, double bound)
     alloc_sensor_reset();
     alloc_sensor_arm();
     float value = 0.0f;
-    for(std::size_t k = 0; k < kGoldenSteps; ++k)
+    for(std::size_t k = 0; k < golden::sample_count; ++k)
         value = demo->step();
     alloc_sensor_disarm();
     const double departure = std::abs(static_cast<double>(value) - golden);

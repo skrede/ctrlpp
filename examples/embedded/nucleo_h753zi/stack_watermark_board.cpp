@@ -23,14 +23,14 @@ namespace
     #define CTRLPP_MCU_STACK_GAP_BYTES 12
 #endif
 
-constexpr std::uint32_t kGapBytes = CTRLPP_MCU_STACK_GAP_BYTES;
+constexpr std::uint32_t gap_bytes = CTRLPP_MCU_STACK_GAP_BYTES;
 
-static_assert(kGapBytes % sizeof(std::uint32_t) == 0, "the window's top must sit on the word grid");
+static_assert(gap_bytes % sizeof(std::uint32_t) == 0, "the window's top must sit on the word grid");
 
 // The host instrument's seed cut to this part's 32-bit word. The address
 // exclusive-or works at the pointer width on either part, so no single stored
 // value can pass as undisturbed at more than one address.
-constexpr std::uint32_t kPaintSeed = static_cast<std::uint32_t>(0x5FC3A96E1D47B208ULL);
+constexpr std::uint32_t paint_seed = static_cast<std::uint32_t>(0x5FC3A96E1D47B208ULL);
 
 struct program_record
 {
@@ -63,7 +63,7 @@ std::uint32_t stack_reserve() noexcept
 
 std::uint32_t paint_word(const std::uint32_t* address) noexcept
 {
-    return kPaintSeed ^ static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(address));
+    return paint_seed ^ static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(address));
 }
 
 [[gnu::noinline]] void paint_below(std::uint32_t* top) noexcept
@@ -112,7 +112,7 @@ stack_reading reading_of(const stack_window& window, const std::uint32_t* deepes
 
 void paint_stack_at_startup() noexcept
 {
-    if constexpr(kStackWatermarkPresent)
+    if constexpr(stack_watermark_present)
     {
         const std::uint32_t floor = close_stack_window(open_stack_window(), 0).used;
         const stack_window window = open_stack_window();
@@ -125,7 +125,7 @@ void paint_stack_at_startup() noexcept
     fold_program();
     std::uint32_t anchor = 0;
     const std::uintptr_t origin = reinterpret_cast<std::uintptr_t>(&anchor) & ~std::uintptr_t{sizeof(std::uint32_t) - 1};
-    std::uint32_t* const top = reinterpret_cast<std::uint32_t*>(origin - kGapBytes);
+    std::uint32_t* const top = reinterpret_cast<std::uint32_t*>(origin - gap_bytes);
     paint_below(top);
     return {origin, top};
 }
@@ -143,7 +143,7 @@ stack_reading read_program_stack() noexcept
 
 void report_stack(const char* region, const stack_reading& r)
 {
-    if constexpr(!kStackWatermarkPresent)
+    if constexpr(!stack_watermark_present)
         return;
     open_line(stream_tag::verdict);
     std::printf("stack region=%s ", region);

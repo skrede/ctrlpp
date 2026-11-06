@@ -43,7 +43,7 @@ inline bool heap_view_clean(const heap_view& view, std::uint32_t self) noexcept
 // The evidence image carries the sensor. The timing image is built without it,
 // keeps arm, disarm and reset as no-ops so the run is the same, and has no
 // count to read: its allocation figures are reported as unmeasured, not zero.
-inline constexpr bool kAllocSensorPresent = CTRLPP_MCU_ALLOC_SENTINEL != 0;
+inline constexpr bool alloc_sensor_present = CTRLPP_MCU_ALLOC_SENTINEL != 0;
 
 // The replaced operators' route to the framework's allocator: counted in the
 // evidence image, the plain allocator otherwise.

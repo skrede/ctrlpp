@@ -6,13 +6,13 @@
 namespace ctrlpp
 {
 
-constexpr std::size_t kBuildIdTextLength = 41;
+constexpr std::size_t build_id_text_length = 41;
 
 // Renders the running image's NT_GNU_BUILD_ID descriptor as lowercase hex. A
 // note that is absent or not of the expected shape renders as the fixed text
 // "unavailable", so a missing fingerprint reads as a named absence and never as
 // a plausible value a host check could match against.
-void render_build_id(char (&text)[kBuildIdTextLength]) noexcept;
+void render_build_id(char (&text)[build_id_text_length]) noexcept;
 
 }
 

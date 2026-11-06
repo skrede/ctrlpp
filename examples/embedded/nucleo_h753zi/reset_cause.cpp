@@ -26,29 +26,29 @@ struct event_signature
     reset_class event;
 };
 
-constexpr std::array<named_flag, 10> kFlags{{{RCC_RSR_CPURSTF, "cpu"}, {RCC_RSR_D1RSTF, "d1"}, {RCC_RSR_D2RSTF, "d2"}, {RCC_RSR_BORRSTF, "bor"}, {RCC_RSR_PINRSTF, "pin"},
+constexpr std::array<named_flag, 10> flags{{{RCC_RSR_CPURSTF, "cpu"}, {RCC_RSR_D1RSTF, "d1"}, {RCC_RSR_D2RSTF, "d2"}, {RCC_RSR_BORRSTF, "bor"}, {RCC_RSR_PINRSTF, "pin"},
         {RCC_RSR_PORRSTF, "por"}, {RCC_RSR_SFTRSTF, "sft"}, {RCC_RSR_IWDG1RSTF, "iwdg1"}, {RCC_RSR_WWDG1RSTF, "wwdg1"}, {RCC_RSR_LPWRRSTF, "lpwr"}}};
 
-constexpr std::uint32_t kPinCpu = RCC_RSR_PINRSTF | RCC_RSR_CPURSTF;
+constexpr std::uint32_t pin_cpu = RCC_RSR_PINRSTF | RCC_RSR_CPURSTF;
 
 // RM0433 section 8.4.4, "Reset source identification": the flags each reset
 // source leaves set in RCC_RSR.
-constexpr std::array<event_signature, 11> kEvents{{{RCC_RSR_PORRSTF | RCC_RSR_BORRSTF | RCC_RSR_D2RSTF | RCC_RSR_D1RSTF | kPinCpu, reset_class::power_on}, {kPinCpu, reset_class::pin},
-        {RCC_RSR_BORRSTF | kPinCpu, reset_class::brownout}, {RCC_RSR_SFTRSTF | kPinCpu, reset_class::software}, {RCC_RSR_CPURSTF, reset_class::cpu},
-        {RCC_RSR_WWDG1RSTF, reset_class::window_watchdog}, {RCC_RSR_WWDG1RSTF | kPinCpu, reset_class::window_watchdog}, {RCC_RSR_IWDG1RSTF | kPinCpu, reset_class::independent_watchdog},
-        {RCC_RSR_D1RSTF, reset_class::d1_standby_exit}, {RCC_RSR_D2RSTF, reset_class::d2_standby_exit}, {RCC_RSR_LPWRRSTF | kPinCpu, reset_class::low_power}}};
+constexpr std::array<event_signature, 11> events{{{RCC_RSR_PORRSTF | RCC_RSR_BORRSTF | RCC_RSR_D2RSTF | RCC_RSR_D1RSTF | pin_cpu, reset_class::power_on}, {pin_cpu, reset_class::pin},
+        {RCC_RSR_BORRSTF | pin_cpu, reset_class::brownout}, {RCC_RSR_SFTRSTF | pin_cpu, reset_class::software}, {RCC_RSR_CPURSTF, reset_class::cpu},
+        {RCC_RSR_WWDG1RSTF, reset_class::window_watchdog}, {RCC_RSR_WWDG1RSTF | pin_cpu, reset_class::window_watchdog}, {RCC_RSR_IWDG1RSTF | pin_cpu, reset_class::independent_watchdog},
+        {RCC_RSR_D1RSTF, reset_class::d1_standby_exit}, {RCC_RSR_D2RSTF, reset_class::d2_standby_exit}, {RCC_RSR_LPWRRSTF | pin_cpu, reset_class::low_power}}};
 
 constexpr std::uint32_t known_flags() noexcept
 {
     std::uint32_t mask = 0;
-    for(const named_flag& flag : kFlags)
+    for(const named_flag& flag : flags)
         mask |= flag.mask;
     return mask;
 }
 
 reset_class classify(std::uint32_t flags) noexcept
 {
-    for(const event_signature& signature : kEvents)
+    for(const event_signature& signature : events)
         if(signature.flags == flags)
             return signature.event;
     return reset_class::unmatched;
@@ -64,7 +64,7 @@ const char* name_of(reset_class event) noexcept
 void print_flags(std::uint32_t status)
 {
     const char* separator = "";
-    for(const named_flag& flag : kFlags)
+    for(const named_flag& flag : flags)
     {
         if((status & flag.mask) == 0U)
             continue;

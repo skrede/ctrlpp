@@ -17,13 +17,13 @@ using namespace ctrlpp;
 
 void print_constants(const predictive_constants& c)
 {
-    std::printf("kHostPredictiveK0            = %.17g\n", c.k0);
-    std::printf("kHostPredictiveK1            = %.17g\n", c.k1);
-    std::printf("kHostPredictiveInputRow      = %.17g\n", c.input_row);
-    std::printf("kHostPredictiveKktCondition  = %.17g\n", c.kkt_condition);
-    std::printf("kHostPredictiveJacobianSigma = %.17g\n", c.jacobian_sigma);
-    std::printf("kHostPredictiveJacobianNorm  = %.17g\n", c.jacobian_norm);
-    std::printf("kHostPredictiveCost          = %.17g\n", c.cost);
+    std::printf("host_predictive_k0             = %.17g\n", c.k0);
+    std::printf("host_predictive_k1             = %.17g\n", c.k1);
+    std::printf("host_predictive_input_row      = %.17g\n", c.input_row);
+    std::printf("host_predictive_kkt_condition  = %.17g\n", c.kkt_condition);
+    std::printf("host_predictive_jacobian_sigma = %.17g\n", c.jacobian_sigma);
+    std::printf("host_predictive_jacobian_norm  = %.17g\n", c.jacobian_norm);
+    std::printf("host_predictive_cost           = %.17g\n", c.cost);
 }
 
 // Two double runs of the same computation may part by twice what one may part from the exact value; a
@@ -31,16 +31,16 @@ void print_constants(const predictive_constants& c)
 bool header_current(const predictive_constants& c, predictive_workspace& workspace)
 {
     const double gain = 2.0 * predictive_gain_departure();
-    const double row = 2.0 * (predictive_input_row() - kHostPredictiveInputRow);
-    const double sigma = 2.0 * (kHostPredictiveJacobianSigma - predictive_jacobian_sigma());
+    const double row = 2.0 * (predictive_input_row() - golden::host_predictive_input_row);
+    const double sigma = 2.0 * (golden::host_predictive_jacobian_sigma - predictive_jacobian_sigma());
     const double cost = 2.0 * host_cost_departure(workspace);
-    const bool current = within_bound(std::abs(c.k0 - kHostPredictiveK0), gain) && within_bound(std::abs(c.k1 - kHostPredictiveK1), gain) &&
-            within_bound(std::abs(c.input_row - kHostPredictiveInputRow), row) && within_bound(std::abs(c.jacobian_sigma - kHostPredictiveJacobianSigma), sigma) &&
-            within_bound(std::abs(c.cost - kHostPredictiveCost), cost);
-    const double relative = (predictive_input_row() - kHostPredictiveInputRow) / kHostPredictiveInputRow;
-    const double norm = 2.0 * counted_departure_bound<double>(static_cast<double>(kPredictiveNv), c.jacobian_norm);
-    const bool indicators = within_bound(std::abs(c.kkt_condition - kHostPredictiveKktCondition), 2.0 * relative * c.kkt_condition) &&
-            within_bound(std::abs(c.jacobian_norm - kHostPredictiveJacobianNorm), norm);
+    const bool current = within_bound(std::abs(c.k0 - golden::host_predictive_k0), gain) && within_bound(std::abs(c.k1 - golden::host_predictive_k1), gain) &&
+            within_bound(std::abs(c.input_row - golden::host_predictive_input_row), row) && within_bound(std::abs(c.jacobian_sigma - golden::host_predictive_jacobian_sigma), sigma) &&
+            within_bound(std::abs(c.cost - golden::host_predictive_cost), cost);
+    const double relative = (predictive_input_row() - golden::host_predictive_input_row) / golden::host_predictive_input_row;
+    const double norm = 2.0 * counted_departure_bound<double>(static_cast<double>(golden::predictive_nv), c.jacobian_norm);
+    const bool indicators = within_bound(std::abs(c.kkt_condition - golden::host_predictive_kkt_condition), 2.0 * relative * c.kkt_condition) &&
+            within_bound(std::abs(c.jacobian_norm - golden::host_predictive_jacobian_norm), norm);
     std::printf("predictive header constants %s\n", current && indicators ? "agree with this run" : "are STALE");
     return current && indicators;
 }
@@ -56,9 +56,9 @@ bool report_host_run(predictive_workspace& workspace)
         return false;
     }
     const predictive_verdict v = judge_predictive(record, workspace);
-    std::printf("predictive host run: stationarity stops %u of %zu, worst gate %.3e\n", record.stationarity_stops, kPredictiveRunSteps, v.worst_gate);
-    std::printf("predictive host cost = %.17g, departure = %.3e, bound = %.3e (%.3e of the cost), host share = %.3e\n", v.cost, v.departure, v.bound, v.bound / kHostPredictiveCost,
-            host_cost_departure(workspace));
+    std::printf("predictive host run: stationarity stops %u of %zu, worst gate %.3e\n", record.stationarity_stops, golden::predictive_run_steps, v.worst_gate);
+    std::printf("predictive host cost = %.17g, departure = %.3e, bound = %.3e (%.3e of the cost), host share = %.3e\n", v.cost, v.departure, v.bound,
+            v.bound / golden::host_predictive_cost, host_cost_departure(workspace));
     std::printf("predictive host verdict = %s\n", v.pass ? "PASS" : "FAIL");
     return v.pass;
 }

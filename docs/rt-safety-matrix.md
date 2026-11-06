@@ -1621,7 +1621,7 @@ revision `0a638cb87b6e959f7cb7b49f0afa34f137b93b69`;
 NUCLEO-H753ZI leg" above). There, one solve and its plant step took a median of
 78.7 ms and a worst of 154.5 ms over the 201 window solves, and the cold first
 solve after a pin reset took 2.25 s. The
-demonstration's control period is 100 ms (`kPredictiveDt` in
+demonstration's control period is 100 ms (`ctrlpp::golden::predictive_dt` in
 `examples/embedded/shared/golden_reference.h`). **The worst window solve
 overruns that period, and so does the cold first solve; only the median fits
 within it.** A bounded iteration count and zero steady-state allocation do not

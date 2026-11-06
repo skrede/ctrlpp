@@ -22,12 +22,12 @@
 namespace
 {
 
-using ctrlpp::probe::kProbeTag;
+using ctrlpp::probe::probe_tag;
 
 // Deliberately generous, so that pass one measures what each dimension NEEDS
 // rather than only whether it fitted the control task's stack. A dimension that
 // overflows here would be reported the same way, by name.
-constexpr std::uint32_t kHeadroomStackBytes = 48 * 1024;
+constexpr std::uint32_t headroom_stack_bytes = 48 * 1024;
 
 void sweep(std::uint32_t stack, SemaphoreHandle_t done)
 {
@@ -42,18 +42,18 @@ void sweep(std::uint32_t stack, SemaphoreHandle_t done)
 
 void headroom_pass(SemaphoreHandle_t done)
 {
-    ESP_LOGI(kProbeTag, "PASS 1 -- requirement per dimension, %" PRIu32 " byte stack, scalar = float", kHeadroomStackBytes);
-    sweep(kHeadroomStackBytes, done);
-    ESP_LOGI(kProbeTag, "PASS 1 complete -- every dimension returned");
+    ESP_LOGI(probe_tag, "PASS 1 -- requirement per dimension, %" PRIu32 " byte stack, scalar = float", headroom_stack_bytes);
+    sweep(headroom_stack_bytes, done);
+    ESP_LOGI(probe_tag, "PASS 1 complete -- every dimension returned");
 }
 
 // Expected to end in a named overflow, and that is the point: it establishes
 // the supported maximum by reaching the first dimension that does not fit.
 void limit_pass(SemaphoreHandle_t done)
 {
-    ESP_LOGI(kProbeTag, "PASS 2 -- supported maximum at the control task's own %" PRIu32 " byte stack", ctrlpp::kControlTaskStackBytes);
-    sweep(ctrlpp::kControlTaskStackBytes, done);
-    ESP_LOGI(kProbeTag, "PASS 2 complete -- no dimension overflowed, which was not expected");
+    ESP_LOGI(probe_tag, "PASS 2 -- supported maximum at the control task's own %" PRIu32 " byte stack", ctrlpp::control_task_stack_bytes);
+    sweep(ctrlpp::control_task_stack_bytes, done);
+    ESP_LOGI(probe_tag, "PASS 2 complete -- no dimension overflowed, which was not expected");
 }
 
 void stack_probe_task(void*)
@@ -86,5 +86,5 @@ extern "C" void vApplicationStackOverflowHook(TaskHandle_t, char* name)
 {
     esp_rom_printf("STACK OVERFLOW in task '%s' -- the dimension above the last "
                    "reported probe line does not fit %u bytes\n",
-            name != nullptr ? name : "<unnamed>", static_cast<unsigned>(ctrlpp::kControlTaskStackBytes));
+            name != nullptr ? name : "<unnamed>", static_cast<unsigned>(ctrlpp::control_task_stack_bytes));
 }

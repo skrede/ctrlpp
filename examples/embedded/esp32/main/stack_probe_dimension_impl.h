@@ -57,7 +57,7 @@ void probe_dimension(std::uint32_t stack)
 {
     const char* outcome = solve_chain<NX, NU>();
     const std::uint32_t free_bytes = static_cast<std::uint32_t>(uxTaskGetStackHighWaterMark(nullptr));
-    ESP_LOGI(kProbeTag, "probe NX=%" PRIu32 " NU=%" PRIu32 ": %s, used %" PRIu32 " of %" PRIu32 " bytes (high-water %" PRIu32 " free)", static_cast<std::uint32_t>(NX),
+    ESP_LOGI(probe_tag, "probe NX=%" PRIu32 " NU=%" PRIu32 ": %s, used %" PRIu32 " of %" PRIu32 " bytes (high-water %" PRIu32 " free)", static_cast<std::uint32_t>(NX),
             static_cast<std::uint32_t>(NU), outcome, stack - free_bytes, stack, free_bytes);
 }
 
@@ -83,7 +83,7 @@ void run_one(std::uint32_t stack, SemaphoreHandle_t done)
     std::snprintf(name, sizeof(name), "probe_nx%" PRIu32, static_cast<std::uint32_t>(NX));
     if(xTaskCreatePinnedToCore(body, name, stack, &arg, 4, nullptr, 0) != pdPASS)
     {
-        ESP_LOGE(kProbeTag, "probe NX=%" PRIu32 ": could not create a task with a %" PRIu32 " byte stack", static_cast<std::uint32_t>(NX), stack);
+        ESP_LOGE(probe_tag, "probe NX=%" PRIu32 ": could not create a task with a %" PRIu32 " byte stack", static_cast<std::uint32_t>(NX), stack);
         return;
     }
     xSemaphoreTake(done, portMAX_DELAY);

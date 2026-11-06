@@ -153,7 +153,7 @@
 #
 # Boot handshake (the NUCLEO-H753ZI leg): the image waits at boot, before it
 # measures or prints anything, for one byte from the host on the virtual COM
-# port, the kBootHandshakeByte that boot_handshake.h names, for at most the
+# port, the boot_handshake_byte that boot_handshake.h names, for at most the
 # timeout that header documents. Once its reader is attached, this script sends
 # that byte about once a second until the report's build id line arrives, in
 # every capture mode, so a reader that attaches late, after a power cycle or a
@@ -782,7 +782,7 @@ elf_stack_reserve()
 source_stack_reserve()
 {
     local expression=""
-    expression="$(sed -n 's/^inline constexpr std::uint32_t kControlTaskStackBytes = \([0-9][0-9 *]*\);$/\1/p' "${leg_dir}/main/stack_probe.h")"
+    expression="$(sed -n 's/^inline constexpr std::uint32_t control_task_stack_bytes = \([0-9][0-9 *]*\);$/\1/p' "${leg_dir}/main/stack_probe.h")"
     printf '%s\n' "${expression}" | grep -Eqx '[0-9]+( \* [0-9]+)*' || return 0
     echo "$((expression))"
 }
@@ -996,8 +996,8 @@ handshake_escape=""
 load_handshake_byte()
 {
     local value=""
-    value="$(sed -n 's/^inline constexpr std::uint8_t kBootHandshakeByte = 0x\([0-9A-Fa-f][0-9A-Fa-f]\);$/\1/p' "${leg_dir}/boot_handshake.h")"
-    [ -n "${value}" ] || fail 3 "${leg_dir}/boot_handshake.h names no kBootHandshakeByte, so the byte the image waits for at boot is unknown."
+    value="$(sed -n 's/^inline constexpr std::uint8_t boot_handshake_byte = 0x\([0-9A-Fa-f][0-9A-Fa-f]\);$/\1/p' "${leg_dir}/boot_handshake.h")"
+    [ -n "${value}" ] || fail 3 "${leg_dir}/boot_handshake.h names no boot_handshake_byte, so the byte the image waits for at boot is unknown."
     printf -v handshake_escape '\\%03o' "0x${value}"
 }
 
@@ -1285,7 +1285,7 @@ verify_stack()
 verify_task_stack()
 {
     local line="" used="" free="" of=""
-    [ -n "${reference_reserve}" ] || fail 3 "${leg_dir}/main/stack_probe.h names no control-task stack (kControlTaskStackBytes), so the stack is unknown."
+    [ -n "${reference_reserve}" ] || fail 3 "${leg_dir}/main/stack_probe.h names no control-task stack (control_task_stack_bytes), so the stack is unknown."
     [ "$(grep -c '^\[verdict\] stack region=program ' "${transcript}" || true)" -eq 1 ] \
         || fail 20 "the report carries $(grep -c '^\[verdict\] stack region=program ' "${transcript}" || true) 'program' stack lines where exactly one is required."
     line="$(grep -m 1 '^\[verdict\] stack region=program ' "${transcript}")"

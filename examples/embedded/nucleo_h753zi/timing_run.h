@@ -31,8 +31,8 @@ public:
     void report() const;
 
 private:
-    std::array<cycle_span, kPredictiveRunSteps> m_spans;
-    std::array<std::int32_t, kPredictiveRunSteps> m_iterations;
+    std::array<cycle_span, golden::predictive_run_steps> m_spans;
+    std::array<std::int32_t, golden::predictive_run_steps> m_iterations;
     std::uint32_t m_start;
 
     void report_work(std::uint32_t slowest_at) const;

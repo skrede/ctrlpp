@@ -28,9 +28,9 @@ namespace
 
 // A warm figure repeats its region as many times as the golden window has
 // steps, so every warm worst-of-N shares N.
-constexpr std::uint32_t kWarmRepeats = static_cast<std::uint32_t>(kGoldenSteps);
+constexpr std::uint32_t warm_repeats = static_cast<std::uint32_t>(golden::sample_count);
 
-static_assert(kWarmRepeats <= kTimingCapacity);
+static_assert(warm_repeats <= timing_capacity);
 
 // Static rather than on the control task's stack, which the figures share with
 // the rest of the report.
@@ -54,7 +54,7 @@ void time_region(const char* name, const char* cold_basis, std::uint32_t block, 
     report({name, "cold", cold_basis, block});
 
     samples.clear();
-    for(std::uint32_t r = 0; r < kWarmRepeats; ++r)
+    for(std::uint32_t r = 0; r < warm_repeats; ++r)
         samples.add(region());
     report({name, "warm", "golden_window", block});
     vTaskDelay(1);
@@ -76,7 +76,7 @@ cycle_span time_block(const Demo& pristine)
     Demo demo = pristine;
     keep(demo);
     const cycle_mark start = open_region();
-    for(std::size_t k = 0; k < kGoldenSteps; ++k)
+    for(std::size_t k = 0; k < golden::sample_count; ++k)
         keep_value(demo.step());
     keep(demo);
     return close_region(start);
@@ -88,12 +88,12 @@ void time_steps(const char* name)
     const auto demo = Demo<float>::make();
     if(!demo.has_value())
     {
-        char body[kLineBytes];
+        char body[line_bytes];
         std::snprintf(body, sizeof(body), "timing region=%s verdict=REFUSED -- the family could not be built", name);
         send_line(stream_tag::verdict, body);
         return;
     }
-    time_region(name, "first_after_reset", static_cast<std::uint32_t>(kGoldenSteps), [&demo] { return time_block(*demo); });
+    time_region(name, "first_after_reset", static_cast<std::uint32_t>(golden::sample_count), [&demo] { return time_block(*demo); });
 }
 
 }

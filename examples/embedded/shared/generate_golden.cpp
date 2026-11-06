@@ -17,21 +17,21 @@ namespace
 template <class Scalar>
 void run_kernel(ctrlpp::control_loop_demo<Scalar>& demo, bool print_rows)
 {
-    for(std::int32_t k = 0; k <= ctrlpp::kSteps; ++k)
+    for(std::int32_t k = 0; k <= ctrlpp::golden::steps; ++k)
     {
         const double x0 = static_cast<double>(demo.x[0]);
         const double x1 = static_cast<double>(demo.x[1]);
         const double u = static_cast<double>(demo.step());
         if(print_rows)
-            std::printf("%" PRId32 ",%.6f,%.9f,%.9f,%.9f\n", k, k * ctrlpp::kDt, x0, x1, u);
+            std::printf("%" PRId32 ",%.6f,%.9f,%.9f,%.9f\n", k, k * ctrlpp::golden::dt, x0, x1, u);
     }
 }
 
 void print_constants(const ctrlpp::control_loop_demo<double>& host)
 {
-    std::printf("kHostK0        = %.17g\n", host.K(0, 0));
-    std::printf("kHostK1        = %.17g\n", host.K(0, 1));
-    std::printf("kHostFinalNorm = %.17g\n", static_cast<double>(host.x.norm()));
+    std::printf("host_k0         = %.17g\n", host.K(0, 0));
+    std::printf("host_k1         = %.17g\n", host.K(0, 1));
+    std::printf("host_final_norm = %.17g\n", static_cast<double>(host.x.norm()));
 }
 
 // The observation is printed beneath each bound and never feeds it; the gain departure the trajectory
@@ -40,29 +40,29 @@ void print_verdict(const char* leg, const ctrlpp::golden_verdict& verdict)
 {
     std::printf("%s gain departure = [%.3e, %.3e], bound = %.3e\n", leg, verdict.gain_departure[0], verdict.gain_departure[1], verdict.gain_tolerance);
     std::printf("%s final-norm departure = %.3e, bound = %.3e (%.3e of the reference norm)\n", leg, verdict.norm_departure, verdict.norm_tolerance,
-            verdict.norm_tolerance / ctrlpp::kHostFinalNorm);
+            verdict.norm_tolerance / ctrlpp::golden::host_final_norm);
     std::printf("%s verdict = %s\n", leg, verdict.pass ? "PASS" : "FAIL");
 }
 
 // The bounds validation/cases/lqr_closed_loop_settling/tolerance.cfg carries for ctrlpp's arm; the
 // reference arm is not counted. Each gain entry is within the counted gain bound of the exact design, so the
 // gain row departs by at most nx times it, and the run is bounded against the exact loop at the host's
-// gain; every column also carries both arms' printing at kPrintedDecimals digits and the comparator's
+// gain; every column also carries both arms' printing at printed_decimals digits and the comparator's
 // reading back.
 void print_cross_validation_tolerances()
 {
-    constexpr int kPrintedDecimals = 15;
+    constexpr int printed_decimals = 15;
     const double eps = std::numeric_limits<double>::epsilon();
-    const double gain_norm = std::abs(ctrlpp::kHostK0) + std::abs(ctrlpp::kHostK1);
-    const double gain = ctrlpp::gain_departure_bound<double>(ctrlpp::kGoldenNx, ctrlpp::kGoldenNu, gain_norm);
+    const double gain_norm = std::abs(ctrlpp::golden::host_k0) + std::abs(ctrlpp::golden::host_k1);
+    const double gain = ctrlpp::gain_departure_bound<double>(ctrlpp::golden::nx, ctrlpp::golden::nu, gain_norm);
     ctrlpp::golden_bound bound = ctrlpp::make_golden_bound();
-    const double state = bound.final_state_departure(eps, ctrlpp::kPlantRoundings, static_cast<double>(ctrlpp::kGoldenNx) * gain);
-    const double printing = 2.0 * (0.5 * std::pow(10.0, -kPrintedDecimals) + eps / 2.0);
-    const double norm_roundings = static_cast<double>(ctrlpp::kGoldenNx + 1) * eps;
+    const double state = bound.final_state_departure(eps, ctrlpp::golden::plant_roundings, static_cast<double>(ctrlpp::golden::nx) * gain);
+    const double printing = 2.0 * (0.5 * std::pow(10.0, -printed_decimals) + eps / 2.0);
+    const double norm_roundings = static_cast<double>(ctrlpp::golden::nx + 1) * eps;
     std::printf("cross-validation: gain_norm = %.17g, gain bound = %.17g, state bound = %.17g\n", gain_norm, gain, state);
     std::printf("atol_K_00=%.17g\nrtol_K_00=%.17g\natol_K_01=%.17g\nrtol_K_01=%.17g\n", gain, printing, gain, printing);
     std::printf("atol_x0_final=%.17g\nrtol_x0_final=%.17g\natol_x1_final=%.17g\nrtol_x1_final=%.17g\n", state, printing, state, printing);
-    std::printf("atol_final_norm=%.17g\nrtol_final_norm=%.17g\n", std::sqrt(static_cast<double>(ctrlpp::kGoldenNx)) * state, printing + norm_roundings);
+    std::printf("atol_final_norm=%.17g\nrtol_final_norm=%.17g\n", std::sqrt(static_cast<double>(ctrlpp::golden::nx)) * state, printing + norm_roundings);
 }
 
 bool report_control()
@@ -121,7 +121,7 @@ template <class Demo>
 double run_to_end(Demo demo)
 {
     double last = 0.0;
-    for(std::size_t k = 0; k < ctrlpp::kGoldenSteps; ++k)
+    for(std::size_t k = 0; k < ctrlpp::golden::sample_count; ++k)
         last = static_cast<double>(demo.step());
     return last;
 }
@@ -147,10 +147,10 @@ int main()
 {
     using namespace ctrlpp;
     const bool control = report_control();
-    const bool estimation =
-            report<estimation_demo>({"estimation", "kHostKalmanVelocityVariance", "kHostKalmanScale", {}, 0.0, estimation_roundings(), kHostKalmanVelocityVariance}, analyze_estimation);
-    const bool dsp = report<dsp_demo>({"dsp", "kHostBiquadOutput", "kHostBiquadScale", {}, 0.0, dsp_roundings(), kHostBiquadOutput}, analyze_dsp);
-    const bool trajectory =
-            report<trajectory_demo>({"trajectory", "kHostTrajectoryPosition", "kHostTrajectoryScale", {}, 0.0, trajectory_roundings(), kHostTrajectoryPosition}, analyze_trajectory);
+    const bool estimation = report<estimation_demo>(
+            {"estimation", "host_kalman_velocity_variance", "host_kalman_scale", {}, 0.0, estimation_roundings(), golden::host_kalman_velocity_variance}, analyze_estimation);
+    const bool dsp = report<dsp_demo>({"dsp", "host_biquad_output", "host_biquad_scale", {}, 0.0, dsp_roundings(), golden::host_biquad_output}, analyze_dsp);
+    const bool trajectory = report<trajectory_demo>(
+            {"trajectory", "host_trajectory_position", "host_trajectory_scale", {}, 0.0, trajectory_roundings(), golden::host_trajectory_position}, analyze_trajectory);
     return control && estimation && dsp && trajectory ? EXIT_SUCCESS : EXIT_FAILURE;
 }

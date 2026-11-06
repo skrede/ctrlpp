@@ -25,9 +25,9 @@ namespace
 
 // A warm figure repeats its region as many times as the golden window has
 // steps, so every warm worst-of-N, the predictive solves' included, shares N.
-constexpr std::uint32_t kWarmRepeats = static_cast<std::uint32_t>(kGoldenSteps);
+constexpr std::uint32_t warm_repeats = static_cast<std::uint32_t>(golden::sample_count);
 
-static_assert(kWarmRepeats <= kTimingCapacity);
+static_assert(warm_repeats <= timing_capacity);
 
 template <class Region>
 void time_region(const char* name, const char* cold_basis, std::uint32_t block, Region region)
@@ -37,7 +37,7 @@ void time_region(const char* name, const char* cold_basis, std::uint32_t block, 
     emit_spread_row({name, "cold", cold_basis, block}, cold.summarize());
 
     cycle_record warm;
-    for(std::uint32_t r = 0; r < kWarmRepeats; ++r)
+    for(std::uint32_t r = 0; r < warm_repeats; ++r)
         warm.add(region());
     emit_spread_row({name, "warm", "golden_window", block}, warm.summarize());
 }
@@ -58,7 +58,7 @@ cycle_span time_block(const Demo& pristine)
     Demo demo = pristine;
     keep(demo);
     const std::uint32_t start = cycle_sample();
-    for(std::size_t k = 0; k < kGoldenSteps; ++k)
+    for(std::size_t k = 0; k < golden::sample_count; ++k)
         keep_value(demo.step());
     keep(demo);
     return cycles_between(start, cycle_sample());
@@ -74,7 +74,7 @@ void time_steps(const char* name)
         std::printf("timing region=%s verdict=REFUSED -- the family could not be built\n", name);
         return;
     }
-    time_region(name, "first_after_reset", static_cast<std::uint32_t>(kGoldenSteps), [&demo] { return time_block(*demo); });
+    time_region(name, "first_after_reset", static_cast<std::uint32_t>(golden::sample_count), [&demo] { return time_block(*demo); });
 }
 
 }
@@ -121,7 +121,7 @@ void solve_timer::report() const
     emit_spread_row({"predictive.step", "cold", "first_after_reset", 1U}, cold.summarize());
 
     cycle_record warm;
-    for(std::size_t k = static_cast<std::size_t>(kPredictiveWarmupSolves); k < kPredictiveRunSteps; ++k)
+    for(std::size_t k = static_cast<std::size_t>(golden::predictive_warmup_solves); k < golden::predictive_run_steps; ++k)
         warm.add(m_spans[k]);
     const cycle_distribution window = warm.summarize();
     emit_spread_row({"predictive.step", "warm", "golden_window", 1U}, window);
@@ -132,7 +132,7 @@ void solve_timer::report() const
 // are printed beside the figures they explain.
 void solve_timer::report_work(std::uint32_t slowest_at) const
 {
-    const auto first = m_iterations.begin() + kPredictiveWarmupSolves;
+    const auto first = m_iterations.begin() + golden::predictive_warmup_solves;
     const auto bounds = std::minmax_element(first, m_iterations.end());
     open_line(stream_tag::verdict);
     std::printf("work region=predictive.step regime=cold iterations=%" PRId32 "\n", m_iterations[0]);

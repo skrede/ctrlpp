@@ -14,7 +14,7 @@ namespace ctrlpp
 namespace
 {
 
-constexpr std::uint64_t kTenthsPerCycle = 10;
+constexpr std::uint64_t tenths_per_cycle = 10;
 
 static_assert(column_count(claim_class::spread) == 11, "emit_spread_row prints eleven values in the table's order");
 
@@ -25,7 +25,7 @@ void print_view(std::string_view text)
 
 void print_bits(double value)
 {
-    char text[kBitsTextLength<double>];
+    char text[bits_text_length<double>];
     std::printf(",%s", render_bits(value, text).data());
 }
 
@@ -38,12 +38,12 @@ void open_line(stream_tag tag)
 
 void emit_identity()
 {
-    char build_id[kBuildIdTextLength];
+    char build_id[build_id_text_length];
     render_build_id(build_id);
     open_line(stream_tag::meta);
     std::printf("build_id=%s\n", build_id);
     open_line(stream_tag::meta);
-    std::printf("kind=%s\n", kAllocSensorPresent ? "evidence" : "timing");
+    std::printf("kind=%s\n", alloc_sensor_present ? "evidence" : "timing");
     open_line(stream_tag::meta);
     std::printf("board=NUCLEO-H753ZI loop=bare-superloop scalar=double\n");
 }
@@ -68,7 +68,7 @@ void emit_header(claim_class claim)
 {
     open_line(tag_of(claim));
     const char* separator = "";
-    for(const claim_field& field : kClaimFields)
+    for(const claim_field& field : claim_fields)
     {
         if(field.claim != claim)
             continue;
@@ -79,7 +79,7 @@ void emit_header(claim_class claim)
     std::printf("\n");
 }
 
-void emit_exact_row(std::int32_t k, const std::array<double, kExactValues>& values)
+void emit_exact_row(std::int32_t k, const std::array<double, exact_values>& values)
 {
     open_line(stream_tag::exact);
     std::printf("%" PRId32, k);
@@ -97,9 +97,9 @@ void emit_spread_row(const timing_region& region, const cycle_distribution& d)
         std::printf(",,,,,,%" PRIu32 "\n", d.wraps);
         return;
     }
-    const std::uint64_t tenths = (std::uint64_t{d.max} * kTenthsPerCycle + region.block / 2U) / region.block;
+    const std::uint64_t tenths = (std::uint64_t{d.max} * tenths_per_cycle + region.block / 2U) / region.block;
     std::printf(",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32, d.min, d.median, d.max, d.max_at);
-    std::printf(",%" PRIu32 ".%" PRIu32 ",%" PRIu32 "\n", static_cast<std::uint32_t>(tenths / kTenthsPerCycle), static_cast<std::uint32_t>(tenths % kTenthsPerCycle), d.wraps);
+    std::printf(",%" PRIu32 ".%" PRIu32 ",%" PRIu32 "\n", static_cast<std::uint32_t>(tenths / tenths_per_cycle), static_cast<std::uint32_t>(tenths % tenths_per_cycle), d.wraps);
 }
 
 void emit_setup_heap()
@@ -111,7 +111,7 @@ void emit_setup_heap()
 void emit_gain(double k0, double k1)
 {
     open_line(stream_tag::verdict);
-    std::printf("gain device=%.17g,%.17g host=%.17g,%.17g\n", k0, k1, kHostK0, kHostK1);
+    std::printf("gain device=%.17g,%.17g host=%.17g,%.17g\n", k0, k1, golden::host_k0, golden::host_k1);
 }
 
 }

@@ -49,7 +49,7 @@ struct control_loop_demo
 
     static control_loop_demo plant()
     {
-        const Scalar dt = static_cast<Scalar>(kDt);
+        const Scalar dt = static_cast<Scalar>(golden::dt);
 
         control_loop_demo demo;
         demo.A << Scalar{1}, dt, Scalar{0}, Scalar{1};

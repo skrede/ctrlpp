@@ -21,7 +21,7 @@ namespace
 // refused.
 void report_refusal(std::size_t size)
 {
-    char body[ctrlpp::kLineBytes];
+    char body[ctrlpp::line_bytes];
     std::snprintf(body, sizeof(body), "heap REFUSED request=%" PRIu32 " largest_free_block=%" PRIu32 " bytes", static_cast<std::uint32_t>(size),
             static_cast<std::uint32_t>(heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT)));
     ctrlpp::send_line(ctrlpp::stream_tag::verdict, body);

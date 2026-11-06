@@ -14,11 +14,16 @@
 namespace ctrlpp
 {
 
-using golden_bound = closed_loop_bound<2, 1, kGoldenSteps>;
+using golden_bound = closed_loop_bound<2, 1, golden::sample_count>;
 
-// Every entry of A and B is formed from kDt in at most three roundings: B's first entry is dt*dt/2 from a
+namespace golden
+{
+
+// Every entry of A and B is formed from dt in at most three roundings: B's first entry is dt*dt/2 from a
 // rounded dt, and the halving is exact.
-constexpr double kPlantRoundings = 3.0;
+constexpr double plant_roundings = 3.0;
+
+}
 
 struct golden_verdict
 {
@@ -40,7 +45,7 @@ inline bool within_bound(double departure, double bound)
 inline golden_bound make_golden_bound()
 {
     control_loop_demo<double> reference = control_loop_demo<double>::plant();
-    reference.K << kHostK0, kHostK1;
+    reference.K << golden::host_k0, golden::host_k1;
     return golden_bound(reference.A, reference.B, reference.K, reference.x);
 }
 
@@ -49,8 +54,8 @@ inline golden_bound make_golden_bound()
 template <class Scalar>
 double golden_gain_tolerance()
 {
-    const double gain_norm = std::abs(kHostK0) + std::abs(kHostK1);
-    return gain_departure_bound<Scalar>(kGoldenNx, kGoldenNu, gain_norm) + gain_departure_bound<double>(kGoldenNx, kGoldenNu, gain_norm);
+    const double gain_norm = std::abs(golden::host_k0) + std::abs(golden::host_k1);
+    return gain_departure_bound<Scalar>(golden::nx, golden::nu, gain_norm) + gain_departure_bound<double>(golden::nx, golden::nu, gain_norm);
 }
 
 // The host run is the reference loop itself, so it carries only its own roundings. The 2-norm departure is
@@ -60,11 +65,11 @@ double golden_norm_tolerance(golden_bound& bound, double gain_departure, double 
 {
     const double eps = static_cast<double>(std::numeric_limits<Scalar>::epsilon());
     const double eps_host = std::numeric_limits<double>::epsilon();
-    const double board = bound.final_state_departure(eps, kPlantRoundings, gain_departure);
+    const double board = bound.final_state_departure(eps, golden::plant_roundings, gain_departure);
     const double host = bound.final_state_departure(eps_host, 0.0, 0.0);
-    const double roundings = static_cast<double>(kGoldenNx + 1);
-    const double scale = std::sqrt(static_cast<double>(kGoldenNx));
-    return scale * (board + host) + roundings * (eps * final_norm + eps_host * kHostFinalNorm);
+    const double roundings = static_cast<double>(golden::nx + 1);
+    const double scale = std::sqrt(static_cast<double>(golden::nx));
+    return scale * (board + host) + roundings * (eps * final_norm + eps_host * golden::host_final_norm);
 }
 
 // The gain departure feeding the trajectory bound is the board's own, measured, and admitted only once the
@@ -74,8 +79,8 @@ template <class Scalar>
 golden_verdict judge_golden(const control_loop_demo<Scalar>& demo, golden_bound& bound)
 {
     golden_verdict verdict{};
-    verdict.gain_departure[0] = static_cast<double>(demo.K(0, 0)) - kHostK0;
-    verdict.gain_departure[1] = static_cast<double>(demo.K(0, 1)) - kHostK1;
+    verdict.gain_departure[0] = static_cast<double>(demo.K(0, 0)) - golden::host_k0;
+    verdict.gain_departure[1] = static_cast<double>(demo.K(0, 1)) - golden::host_k1;
     verdict.gain_tolerance = golden_gain_tolerance<Scalar>();
     const double dev0 = std::abs(verdict.gain_departure[0]);
     const double dev1 = std::abs(verdict.gain_departure[1]);
@@ -83,7 +88,7 @@ golden_verdict judge_golden(const control_loop_demo<Scalar>& demo, golden_bound&
 
     const double measured = (dev0 + dev1) * (1.0 + std::numeric_limits<double>::epsilon());
     const double final_norm = static_cast<double>(demo.x.norm());
-    verdict.norm_departure = std::abs(final_norm - kHostFinalNorm);
+    verdict.norm_departure = std::abs(final_norm - golden::host_final_norm);
     verdict.norm_tolerance = golden_norm_tolerance<Scalar>(bound, measured, final_norm);
     verdict.norm_pass = within_bound(verdict.norm_departure, verdict.norm_tolerance);
     verdict.pass = verdict.gain_pass && verdict.norm_pass;

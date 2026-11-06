@@ -14,7 +14,7 @@ namespace ctrlpp
 {
 
 // The largest sample set any region records: every solve of the predictive run.
-constexpr std::size_t kTimingCapacity = kPredictiveRunSteps;
+constexpr std::size_t timing_capacity = golden::predictive_run_steps;
 
 struct cycle_distribution
 {
@@ -70,7 +70,7 @@ public:
     }
 
 private:
-    std::array<std::uint32_t, kTimingCapacity> m_cycles;
+    std::array<std::uint32_t, timing_capacity> m_cycles;
     std::uint32_t m_n;
     std::uint32_t m_wraps;
     std::uint32_t m_max_at;

@@ -15,14 +15,14 @@
 namespace
 {
 
-constexpr std::size_t kCanaryBytes = sizeof(double);
-constexpr std::size_t kCanaryAlignment = 2 * __STDCPP_DEFAULT_NEW_ALIGNMENT__;
+constexpr std::size_t canary_bytes = sizeof(double);
+constexpr std::size_t canary_alignment = 2 * __STDCPP_DEFAULT_NEW_ALIGNMENT__;
 // A dynamic-size vector always takes heap storage, so one element is enough.
-constexpr Eigen::Index kCanaryElements = 1;
+constexpr Eigen::Index canary_elements = 1;
 // Four blocks of the same size, two of them through the replaced operators.
-constexpr std::uint32_t kCanaryBlocks = 4;
-constexpr std::uint32_t kCanaryCounted = 2;
-constexpr std::uint32_t kCanaryRequested = kCanaryBlocks * kCanaryBytes;
+constexpr std::uint32_t canary_blocks = 4;
+constexpr std::uint32_t canary_counted = 2;
+constexpr std::uint32_t canary_requested = canary_blocks * canary_bytes;
 
 std::uint32_t heap_self = 0;
 
@@ -64,10 +64,10 @@ canary_verdict run_alloc_canary() noexcept
     const bool isolated = measure_heap_self();
     alloc_sensor_reset();
     alloc_sensor_arm();
-    void* c_block = std::malloc(kCanaryBytes);
-    void* cpp_block = ::operator new(kCanaryBytes);
-    void* aligned_block = ::operator new(kCanaryBytes, std::align_val_t{kCanaryAlignment});
-    Eigen::VectorXd eigen_block = Eigen::VectorXd::Ones(kCanaryElements);
+    void* c_block = std::malloc(canary_bytes);
+    void* cpp_block = ::operator new(canary_bytes);
+    void* aligned_block = ::operator new(canary_bytes, std::align_val_t{canary_alignment});
+    Eigen::VectorXd eigen_block = Eigen::VectorXd::Ones(canary_elements);
     escape(c_block);
     escape(cpp_block);
     escape(aligned_block);
@@ -77,11 +77,11 @@ canary_verdict run_alloc_canary() noexcept
     const std::uint32_t observed = alloc_sensor_observed();
     const std::uint32_t eigen = alloc_sensor_eigen_trips();
     const heap_view heap = alloc_sensor_heap();
-    ::operator delete(aligned_block, std::align_val_t{kCanaryAlignment});
+    ::operator delete(aligned_block, std::align_val_t{canary_alignment});
     ::operator delete(cpp_block);
     std::free(c_block);
-    const bool heap_live = isolated && heap.retained - static_cast<std::int32_t>(heap_self) >= static_cast<std::int32_t>(kCanaryRequested);
-    return {observed == kCanaryCounted && eigen > 0, observed, kCanaryCounted, eigen, heap_live, heap, kCanaryRequested, heap_self};
+    const bool heap_live = isolated && heap.retained - static_cast<std::int32_t>(heap_self) >= static_cast<std::int32_t>(canary_requested);
+    return {observed == canary_counted && eigen > 0, observed, canary_counted, eigen, heap_live, heap, canary_requested, heap_self};
 }
 
 }

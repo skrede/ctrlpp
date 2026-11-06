@@ -8,12 +8,12 @@ namespace ctrlpp
 
 // ASCII SYN: a control byte that the AT probes a modem manager writes to a
 // newly attached serial port never contain, so a probe cannot release the wait.
-inline constexpr std::uint8_t kBootHandshakeByte = 0x16;
+inline constexpr std::uint8_t boot_handshake_byte = 0x16;
 
 // The wait must outlast the host's side of a restart, about 11 s for the ST-LINK to re-enumerate after
 // drag-and-drop programming, and costs nothing with the host attached, whose byte lands about 1 s after the
 // port returns. Configured with CTRLPP_MCU_BOOT_HANDSHAKE_MS.
-inline constexpr std::uint32_t kBootHandshakeTimeoutMs = CTRLPP_MCU_BOOT_HANDSHAKE_MS;
+inline constexpr std::uint32_t boot_handshake_timeout_ms = CTRLPP_MCU_BOOT_HANDSHAKE_MS;
 
 // Waits for the host's byte on USART3, then turns the receiver off again. The
 // console must already be up. Runs before the cycle counter is enabled and

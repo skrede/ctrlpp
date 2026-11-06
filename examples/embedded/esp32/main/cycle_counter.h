@@ -14,7 +14,7 @@ enum class counter_state
 
 const char* describe(counter_state state) noexcept;
 
-inline constexpr std::uint32_t kCounterBits = 32;
+inline constexpr std::uint32_t counter_bits = 32;
 
 // This core's CCOUNT runs from reset with no trace enable and no software lock, so the proof is the
 // measurement half alone; it is still mandatory, since any state other than live means no figure may be

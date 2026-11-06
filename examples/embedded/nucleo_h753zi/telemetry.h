@@ -28,11 +28,11 @@ void emit_counter_canary(counter_state state);
 // follows carries its values in the same order.
 void emit_header(claim_class claim);
 
-inline constexpr std::size_t kExactValues = column_count(claim_class::exact) - 1;
+inline constexpr std::size_t exact_values = column_count(claim_class::exact) - 1;
 
 // One row per loop index, in index order, so two runs compare line by line and a
 // reordering is a difference rather than a wash.
-void emit_exact_row(std::int32_t k, const std::array<double, kExactValues>& values);
+void emit_exact_row(std::int32_t k, const std::array<double, exact_values>& values);
 
 // The figures are raw: each carries the instrument overhead, which the report
 // publishes on its own rows. A region whose every sample wrapped prints a zero

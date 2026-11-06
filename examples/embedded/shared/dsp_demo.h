@@ -44,7 +44,7 @@ class dsp_demo
 public:
     static ctrlpp::expected<dsp_demo, dsp_error> make()
     {
-        const auto filter = biquad<Scalar>::low_pass(kCutoffHz, kSampleHz);
+        const auto filter = biquad<Scalar>::low_pass(cutoff_hz, sample_hz);
         if(!filter.has_value())
             return ctrlpp::unexpected(filter.error());
         return dsp_demo(*filter);
@@ -52,7 +52,7 @@ public:
 
     // A square wave below the cutoff, exact at either precision; the run ends on the first sample after an
     // edge, where the output is furthest from settled.
-    static Scalar input(std::int32_t k) { return (k / kHalfPeriod) % 2 == 0 ? Scalar{1} : Scalar{-1}; }
+    static Scalar input(std::int32_t k) { return (k / half_period) % 2 == 0 ? Scalar{1} : Scalar{-1}; }
 
     Scalar step()
     {
@@ -64,13 +64,13 @@ public:
     const biquad_coeffs<Scalar>& coefficients() const { return m_filter.coefficients(); }
 
 private:
-    static constexpr Scalar kCutoffHz = Scalar{100};
-    static constexpr Scalar kSampleHz = Scalar{1000};
-    static constexpr std::int32_t kHalfPeriod = 25;
+    static constexpr Scalar cutoff_hz = Scalar{100};
+    static constexpr Scalar sample_hz = Scalar{1000};
+    static constexpr std::int32_t half_period = 25;
 
     // biquad_roundings_per_step charges the design's tangent through its slope for a normalized cutoff of
     // at most one radian.
-    static_assert(Scalar{2} * std::numbers::pi_v<Scalar> * kCutoffHz <= kSampleHz);
+    static_assert(Scalar{2} * std::numbers::pi_v<Scalar> * cutoff_hz <= sample_hz);
 
     biquad<Scalar> m_filter;
     std::int32_t m_index;

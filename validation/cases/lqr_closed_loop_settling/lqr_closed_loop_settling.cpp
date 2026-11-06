@@ -12,7 +12,7 @@ int main()
         return 1;
     }
 
-    for(std::size_t k = 0; k < ctrlpp::kGoldenSteps; ++k)
+    for(std::size_t k = 0; k < ctrlpp::golden::sample_count; ++k)
         demo->step();
 
     std::printf("K_00,K_01,x0_final,x1_final,final_norm\n");

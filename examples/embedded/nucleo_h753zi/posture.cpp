@@ -17,8 +17,8 @@ extern "C" char end[];
 namespace
 {
 
-constexpr std::uint64_t kCounterStates = std::uint64_t{1} << 32;
-constexpr std::uint64_t kMillisecond = 1000;
+constexpr std::uint64_t counter_states = std::uint64_t{1} << 32;
+constexpr std::uint64_t millisecond = 1000;
 
 const char* clock_source() noexcept
 {
@@ -83,7 +83,7 @@ void report_posture()
     const std::uint32_t ccr = SCB->CCR;
     const std::uint32_t latency = (FLASH->ACR & FLASH_ACR_LATENCY_Msk) >> FLASH_ACR_LATENCY_Pos;
     const std::uint64_t clock_hz = SystemCoreClock != 0U ? SystemCoreClock : 1U;
-    const std::uint32_t wrap_ms = static_cast<std::uint32_t>(kCounterStates * kMillisecond / clock_hz);
+    const std::uint32_t wrap_ms = static_cast<std::uint32_t>(counter_states * millisecond / clock_hz);
     char frame_marker = 0;
     open_line(stream_tag::meta);
     std::printf("posture ");
