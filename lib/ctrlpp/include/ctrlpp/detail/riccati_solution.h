@@ -145,7 +145,7 @@ enum class riccati_accuracy
 // favorably. A Bartels-Stewart Stein solve is cheaper above N = 4 but let more wrong answers through on the acceptance
 // population, so Omega is assembled densely on the symmetric subspace and solved by a rank-revealing QR.
 // @cite laub1979  -- Laub, "A Schur Method for Solving Algebraic Riccati Equations", 1979
-// @cite higham2008 -- Higham, "Accuracy and Stability of Numerical Algorithms", 2nd ed., 2008, Ch. 19
+// @cite higham2002 -- Higham, "Accuracy and Stability of Numerical Algorithms", 2nd ed., 2002, Ch. 19
 template <typename Scalar, int N>
 resolved_magnitude<Scalar> estimate_riccati_forward_error(
         const Eigen::Matrix<Scalar, N, N>& closed_loop, const Eigen::Matrix<Scalar, N, N>& residual, const Eigen::Matrix<Scalar, N, N>& P)

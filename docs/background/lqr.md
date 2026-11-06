@@ -4,7 +4,7 @@ The Linear Quadratic Regulator (LQR) is the optimal state-feedback controller
 for linear systems with a quadratic cost function. It provides a systematic
 method for computing gain matrices that balance state regulation against
 control effort, with stability margins guaranteed in continuous time, computed
-from an algebraic Riccati equation [1, Ch. 12, pp. 671--720].
+from an algebraic Riccati equation [4, Secs. 3.1, 5.4].
 
 LQR is the foundation of modern optimal control and forms the basis for many
 advanced control strategies including LQG (LQR + Kalman filter), MPC terminal
@@ -12,14 +12,15 @@ cost design, and integral-action state feedback.
 
 ## Optimal Control Problem
 
-Consider a discrete linear time-invariant system [1, Sec. 12.8, pp. 709--714]:
+Consider a discrete linear time-invariant system [5, Sec. 11.2, Eq. (11.16), p. 413]:
 
 $$
 x_{k+1} = A \, x_k + B \, u_k
 $$
 
 The LQR problem seeks the control sequence $\{u_0, u_1, \ldots\}$ that
-minimizes the infinite-horizon quadratic cost [2, Sec. 3.2, pp. 43--50]:
+minimizes the infinite-horizon quadratic cost [5, Sec. 11.1, Eq. (11.9), p. 412;
+Sec. 11.2, p. 420]:
 
 $$
 J = \sum_{k=0}^{\infty} \left( x_k^\top Q \, x_k + u_k^\top R \, u_k \right)
@@ -40,7 +41,7 @@ usage.
 ## Discrete Algebraic Riccati Equation
 
 The optimal cost-to-go matrix $P$ satisfies the Discrete Algebraic Riccati
-Equation (DARE) [1, Sec. 12.8, p. 711]:
+Equation (DARE) [5, Sec. 11.2, Eq. (11.33), p. 420]:
 
 $$
 P = A^\top P \, A - A^\top P \, B \, (R + B^\top P \, B)^{-1} B^\top P \, A + Q
@@ -48,8 +49,8 @@ $$
 
 This is a matrix fixed-point equation that can be solved iteratively or via
 eigendecomposition methods. A unique stabilizing solution exists when the system
-$(A, B)$ is stabilizable and $(A, Q^{1/2})$ is detectable
-[2, Sec. 3.3, pp. 51--55].
+$(A, B)$ is stabilizable and $(A, Q^{1/2})$ is detectable; [2, Sec. 7.3,
+Theorem 23, p. 196] states this for the dual, Kalman-filter DARE.
 
 ### Schur Method
 
@@ -79,7 +80,7 @@ subspace through the matrix sign function rather than a Schur decomposition.
 ## Optimal Gain
 
 Given the DARE solution $P$, the optimal state-feedback gain is
-[1, Sec. 12.8, p. 712]:
+[5, Sec. 11.2, Eq. (11.19), p. 414, and Theorem 11.3, p. 423]:
 
 $$
 K = (R + B^\top P \, B)^{-1} B^\top P \, A
@@ -96,21 +97,22 @@ offline and applied at each time step with no online optimization required.
 
 ## Stability Properties
 
-The LQR has strong stability guarantees [2, Sec. 3.4, pp. 56--60]:
+The LQR has strong stability guarantees:
 
 - **Closed-loop stability**: all eigenvalues of $(A - BK)$ lie strictly
-  inside the unit circle (for discrete-time systems).
+  inside the unit circle (for discrete-time systems) [5, Sec. 11.2, Theorem 11.3,
+  p. 423].
 - **Gain margin**: for continuous-time LQR with a diagonal $R$, each input
   channel has a gain margin of at least $[1/2, \infty)$ and a phase margin of at
-  least $60^\circ$.
-- **Robustness**: the LQR provides inherent robustness to model uncertainty,
-  though the discrete-time margins are generally less generous than
-  continuous-time.
+  least $60^\circ$ [4, Sec. 5.4].
+- **Robustness**: the margins are tolerance of gain and phase variations at the
+  plant input; the discrete-time margins are finite and generally less generous
+  than the continuous-time ones [4, Sec. 5.7], [5, Sec. 11.2, p. 427].
 
 ## Finite-Horizon LQR
 
 For a finite horizon of $N$ steps, the cost function is
-[1, Sec. 12.8, pp. 710--711]:
+[5, Sec. 11.1, Eq. (11.9), p. 412]:
 
 $$
 J = \sum_{k=0}^{N-1} \left( x_k^\top Q \, x_k + u_k^\top R \, u_k \right) + x_N^\top Q_f \, x_N
@@ -118,7 +120,7 @@ $$
 
 where $Q_f$ is the terminal cost weight. The optimal gain varies with time
 and is computed by iterating the discrete Riccati recursion backward from
-$P_N = Q_f$ [2, Sec. 3.1, pp. 40--43]:
+$P_N = Q_f$ [5, Sec. 11.2, Theorem 11.1, Eqs. (11.17)--(11.19), p. 414]:
 
 $$
 P_k = A^\top P_{k+1} A - A^\top P_{k+1} B (R + B^\top P_{k+1} B)^{-1} B^\top P_{k+1} A + Q
@@ -129,13 +131,13 @@ K_k = (R + B^\top P_{k+1} B)^{-1} B^\top P_{k+1} A
 $$
 
 As $N \to \infty$, the time-varying gains converge to the steady-state
-infinite-horizon gain.
+infinite-horizon gain [5, Sec. 11.2, p. 420].
 
 ## LQR with Integral Action
 
 Standard LQR regulates states to the origin. To track non-zero references
 and reject constant disturbances, the state vector is augmented with integral
-states [1, Sec. 12.9, pp. 715--718]:
+states, the discrete-time counterpart of [1, Sec. 12.8, pp. 684--685]:
 
 $$
 x_{\text{aug}} = \begin{bmatrix} x_k \\ \xi_k \end{bmatrix}, \qquad
@@ -160,7 +162,7 @@ step disturbances.
 ## Weight Selection
 
 The choice of $Q$ and $R$ determines the controller characteristics
-[1, Sec. 12.8, pp. 713--714]:
+[5, Sec. 11.2, pp. 427--428]:
 
 - **Bryson's rule**: set $Q_{ii} = 1 / x_{i,\max}^2$ and
   $R_{jj} = 1 / u_{j,\max}^2$, where $x_{i,\max}$ and $u_{j,\max}$ are the
@@ -169,7 +171,7 @@ The choice of $Q$ and $R$ determines the controller characteristics
   closed-loop simulation.
 - **Cross-weight $N$**: the generalized cost
   $J = \sum (x^\top Q x + u^\top R u + 2 x^\top N u)$ allows penalizing
-  state-input correlations.
+  state-input correlations [5, Sec. 11.1, Eq. (11.9), p. 412].
 
 ## References
 
@@ -183,3 +185,6 @@ IEEE Transactions on Automatic Control, vol. 24, no. 6, pp. 913--921, 1979.
 
 [4] B. D. O. Anderson and J. B. Moore, "Optimal Control: Linear Quadratic
 Methods," Dover, 1990.
+
+[5] K. J. Astrom and B. Wittenmark, "Computer-Controlled Systems: Theory and
+Design," 3rd ed., Prentice Hall, 1997.

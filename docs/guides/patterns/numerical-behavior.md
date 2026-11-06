@@ -478,7 +478,7 @@ is a defaulted parameter of the shared helpers, `symmetrize_within_drift` and
 `checked_unit_quaternion` in `ctrlpp/estimation/detail/filter_configuration.h`,
 default 1, and not a field of any configuration. The absolute term is the gradual-underflow part of the
 standard model, `fl(x op y) = (x op y)(1 + delta) + eta` with
-`|eta| <= denorm_min / 2` (Higham, Sec. 2.1). Without it the bound would
+`|eta| <= denorm_min / 2` (Higham, Sec. 2.12, Eq. (2.8), p. 56). Without it the bound would
 collapse to zero for a subnormal-scale input, which would then be judged with
 no tolerance at all; at and above `scale = denorm_min / (c eps)` the bound is
 the relative term exactly, so no normal-scale verdict depends on it.
