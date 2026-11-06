@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_MODEL_DISCRETIZE_H
 
 // @cite franklin2015 -- Franklin et al., "Feedback Control of Dynamic Systems", 2015
-// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems: Theory and Design", 3rd ed., 1997, Ch. 3
+// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems: Theory and Design", 3rd ed., 1997, Ch. 2 and Ch. 8
 
 #include "ctrlpp/model/state_space.h"
 
@@ -43,7 +43,7 @@ struct backward_euler
 // Van Loan's method: Ad and Bd are the upper blocks of exp([[A*dt, B*dt], [0, 0]]).
 // @cite vanloan1978 -- Van Loan, "Computing Integrals Involving the Matrix Exponential",
 //   IEEE Trans. Autom. Control 23(3):395-404, 1978
-// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems", 3rd ed., 1997, Sec. 3.2
+// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems: Theory and Design", 3rd ed., 1997, Sec. 2.3, Eq. (2.6), p. 34
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 discrete_state_space<Scalar, NX, NU, NY> discretize(zoh, const continuous_state_space<Scalar, NX, NU, NY>& sys, Scalar dt)
 {
@@ -91,7 +91,7 @@ discrete_state_space<Scalar, NX, NU, NY> tustin_bilinear(const continuous_state_
 
 }
 
-// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems", 3rd ed., 1997, Sec. 3.5
+// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems: Theory and Design", 3rd ed., 1997, Sec. 8.2, Eq. (8.6), p. 295
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 discrete_state_space<Scalar, NX, NU, NY> discretize(tustin, const continuous_state_space<Scalar, NX, NU, NY>& sys, Scalar dt)
 {
@@ -99,7 +99,7 @@ discrete_state_space<Scalar, NX, NU, NY> discretize(tustin, const continuous_sta
 }
 
 // Frequency prewarping: dt_warp makes the bilinear map exact at the critical frequency w_c.
-// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems", 3rd ed., 1997, Sec. 3.5
+// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems: Theory and Design", 3rd ed., 1997, Sec. 8.2, Eq. (8.8), p. 296
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 discrete_state_space<Scalar, NX, NU, NY> discretize(tustin_prewarp<Scalar> warp, const continuous_state_space<Scalar, NX, NU, NY>& sys, Scalar dt)
 {
@@ -107,7 +107,7 @@ discrete_state_space<Scalar, NX, NU, NY> discretize(tustin_prewarp<Scalar> warp,
     return detail::tustin_bilinear(sys, dt_warp);
 }
 
-// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems", 3rd ed., 1997, Sec. 3.5
+// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems: Theory and Design", 3rd ed., 1997, Sec. 8.2, Eq. (8.4), p. 295
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 discrete_state_space<Scalar, NX, NU, NY> discretize(forward_euler, const continuous_state_space<Scalar, NX, NU, NY>& sys, Scalar dt)
 {
@@ -119,7 +119,7 @@ discrete_state_space<Scalar, NX, NU, NY> discretize(forward_euler, const continu
     return {Ad, Bd, sys.C, sys.D};
 }
 
-// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems", 3rd ed., 1997, Sec. 3.5
+// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems: Theory and Design", 3rd ed., 1997, Sec. 8.2, Eq. (8.5), p. 295
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 discrete_state_space<Scalar, NX, NU, NY> discretize(backward_euler, const continuous_state_space<Scalar, NX, NU, NY>& sys, Scalar dt)
 {

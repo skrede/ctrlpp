@@ -51,7 +51,7 @@ bool is_stable(const continuous_state_space<Scalar, NX, NU, NY>& sys)
     return true;
 }
 
-// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems", 3rd ed., 1997, Sec. 3.3 (unit-circle criterion)
+// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems: Theory and Design", 3rd ed., 1997, Sec. 3.2, Theorem 3.1, p. 79
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 bool is_stable(const discrete_state_space<Scalar, NX, NU, NY>& sys)
 {
