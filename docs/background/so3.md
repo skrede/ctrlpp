@@ -4,7 +4,7 @@ The special orthogonal group SO(3) is the group of all rotations in
 three-dimensional space. It forms a Lie group: a smooth manifold that is also
 a group, meaning rotations can be composed and inverted smoothly. Understanding
 SO(3) is essential for attitude estimation, robotic manipulation, and any
-application involving 3D orientation [1, Ch. 7, pp. 211--266].
+application involving 3D orientation [1, Sec. 8.1.1].
 
 This page covers rotation representations, the Lie group structure, the
 exponential and logarithmic maps, and the Adjoint representation. ctrlpp
@@ -16,7 +16,7 @@ no ctrlpp function.
 ## Rotation Matrices
 
 A rotation matrix $R \in \mathbb{R}^{3 \times 3}$ satisfies the orthogonality
-constraints [1, Sec. 7.1.1, pp. 213--215]:
+constraints [1, Sec. 8.1.1, Eq. (8.1)]:
 
 $$
 R^\top R = I, \qquad \det(R) = +1
@@ -36,7 +36,7 @@ conditions.
 
 Rotations compose by matrix multiplication. If $R_1$ rotates frame $A$ to $B$
 and $R_2$ rotates frame $B$ to $C$, then $R_2 R_1$ rotates $A$ to $C$
-[1, Sec. 7.1.1, p. 214].
+[1, Sec. 7.2.1].
 
 The inverse of a rotation is its transpose: $R^{-1} = R^\top$.
 
@@ -45,11 +45,11 @@ The inverse of a rotation is its transpose: $R^{-1} = R^\top$.
 A unit quaternion $q = [q_w, q_x, q_y, q_z]^\top$ with $\lVert q \rVert = 1$
 provides a compact, singularity-free representation of rotations. Quaternions
 form a double cover of SO(3): both $q$ and $-q$ represent the same rotation
-[1, Sec. 7.1.3, pp. 218--222].
+[3, App. B].
 
 ### Hamilton Product
 
-The Hamilton product composes two rotations [1, eq. (7.12), p. 219]:
+The Hamilton product composes two rotations [2, App. B.3]:
 
 $$
 p \otimes q = \begin{bmatrix}
@@ -65,7 +65,7 @@ Under this product $R(p \otimes q) = R(p)\,R(q)$.
 
 ### Quaternion to Rotation Matrix
 
-The equivalent rotation matrix is [1, eq. (7.14), p. 220]:
+The equivalent rotation matrix is [3, App. B, Eq. (138)]:
 
 $$
 R(q) = (q_w^2 - \lVert q_{xyz} \rVert^2) I + 2 q_{xyz} q_{xyz}^\top + 2 q_w [q_{xyz}]_\times
@@ -76,7 +76,7 @@ $$
 A rotation can be described by an axis $\hat{e} \in \mathbb{R}^3$ with
 $\lVert \hat{e} \rVert = 1$ and an angle $\theta \in [0, \pi]$. The rotation
 vector $\phi = \theta \hat{e} \in \mathbb{R}^3$ is a minimal (3-parameter)
-representation [1, Sec. 7.1.2, pp. 215--218].
+representation [1, Sec. 7.2.3].
 
 The axis is undefined when $\theta = 0$, but the rotation vector itself is
 $\phi = 0$ there and the exponential map is smooth through it. The rotation
@@ -88,7 +88,7 @@ singularity everywhere on SO(3) (a topological constraint).
 
 The Lie algebra of SO(3), denoted $\mathfrak{so}(3)$, is the tangent space at
 the identity element. It consists of all $3 \times 3$ skew-symmetric matrices
-[1, Sec. 7.2.1, pp. 223--225]:
+[1, Sec. 8.1.2, Eq. (8.10)]:
 
 $$
 \mathfrak{so}(3) = \{ [\phi]_\times : \phi \in \mathbb{R}^3 \}
@@ -106,7 +106,7 @@ The inverse (vee) operator recovers $\phi$ from $[\phi]_\times$.
 
 The exponential map takes an element of the Lie algebra (a tangent vector)
 to the Lie group (a rotation). For $\phi \in \mathbb{R}^3$ with
-$\theta = \lVert \phi \rVert$ [1, eq. (7.18), p. 229]:
+$\theta = \lVert \phi \rVert$ [1, Sec. 8.1.3, Eq. (8.23)]:
 
 $$
 \exp([\phi]_\times) = I + \frac{\sin \theta}{\theta} [\phi]_\times + \frac{1 - \cos \theta}{\theta^2} [\phi]_\times^2
@@ -122,7 +122,7 @@ $$
 \frac{1 - \cos \theta}{\theta^2} \approx \frac{1}{2} - \frac{\theta^2}{24} + \frac{\theta^4}{720}
 $$
 
-For quaternions, the exponential map is [1, eq. (7.20), p. 230]:
+For quaternions, the exponential map is [3, App. B, Eq. (132)]:
 
 $$
 \exp(\phi) = \begin{bmatrix} \cos(\theta/2) \\ \frac{\sin(\theta/2)}{\theta} \phi \end{bmatrix}
@@ -137,7 +137,7 @@ the result is normalized.
 ## Logarithmic Map
 
 The logarithmic map is the inverse of the exponential map, taking a rotation
-back to the Lie algebra [1, eq. (7.22), p. 231]:
+back to the Lie algebra [3, App. B, Eqs. (133) and (135)]:
 
 For a rotation matrix $R$ with rotation angle
 $\theta = \arccos\!\left(\frac{\text{tr}(R) - 1}{2}\right)$:
@@ -162,7 +162,7 @@ used.
 
 The Adjoint representation of SO(3) describes how the Lie algebra transforms
 under conjugation by group elements
-[1, Sec. 7.3, pp. 234--238]:
+[3, Sec. II-F and App. B, Eq. (139)]:
 
 $$
 \text{Ad}_R : \mathfrak{so}(3) \to \mathfrak{so}(3), \qquad \text{Ad}_R(\phi) = R \phi
@@ -178,7 +178,7 @@ applied to tangent vectors. This is used extensively in:
 ## Left and Right Jacobians
 
 The left Jacobian of SO(3) relates perturbations in the Lie algebra to
-perturbations on the group [1, Sec. 7.4, pp. 240--245]:
+perturbations on the group [3, App. B, Eqs. (143)--(147)]:
 
 $$
 J_l(\phi) = I + \frac{1 - \cos \theta}{\theta^2} [\phi]_\times + \frac{\theta - \sin \theta}{\theta^3} [\phi]_\times^2
@@ -197,7 +197,7 @@ Jacobians appear in:
 
 For estimation and control on SO(3), it is common to represent uncertainty as
 a small perturbation $\delta\phi \in \mathbb{R}^3$ in the tangent space
-[1, Sec. 7.5, pp. 245--250]:
+[3, Sec. II-E, Eq. (25)]:
 
 $$
 R_{\text{true}} = R_{\text{nominal}} \cdot \exp([\delta\phi]_\times)
@@ -219,4 +219,4 @@ University Press, 2025.
 Control," Cambridge University Press, 2017.
 
 [3] J. Sola, J. Deray, and D. Atchuthan, "A Micro Lie Theory for State
-Estimation in Robotics," arXiv:1812.01537, 2018.
+Estimation in Robotics," arXiv:1812.01537v9, 2021.

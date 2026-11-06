@@ -25,7 +25,7 @@ inline bool unit_direction(const Vector<Scalar, 3>& v, Vector<Scalar, 3>& direct
     return true;
 }
 
-// @cite mahony2008 -- Mahony et al., 2008, Eq. 12 (gravity error via cross product)
+// @cite mahony2008 -- Mahony, Hamel & Pflimlin, "Nonlinear Complementary Filters on the Special Orthogonal Group", 2008, Eq. 32c
 template <typename Scalar>
 inline Vector<Scalar, 3> compute_gravity_correction(const Eigen::Quaternion<Scalar>& q, const Vector<Scalar, 3>& acc_n)
 {
@@ -33,7 +33,8 @@ inline Vector<Scalar, 3> compute_gravity_correction(const Eigen::Quaternion<Scal
     return acc_n.cross(g_body);
 }
 
-// @cite mahony2008 -- Mahony et al., 2008, Eq. 48 (magnetic field error)
+// @cite mahony2008 -- Mahony, Hamel & Pflimlin, "Nonlinear Complementary Filters on the Special Orthogonal Group", 2008, Eq. 32c
+// @cite madgwick2010 -- Madgwick, "An efficient orientation filter for inertial and inertial/magnetic sensor arrays", 2010, Sec. 3.4, Eqs. 45-46
 template <typename Scalar>
 inline Vector<Scalar, 3> compute_magnetic_correction(const Eigen::Quaternion<Scalar>& q, const Vector<Scalar, 3>& mag_n)
 {

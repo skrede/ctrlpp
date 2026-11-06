@@ -44,7 +44,7 @@ public:
         return mean;
     }
 
-    // @cite arulampalam2002 -- Arulampalam et al., "A Tutorial on Particle Filters", 2002, Sec. III-A
+    // @cite arulampalam2002 -- Arulampalam, Maskell, Gordon & Clapp, "A Tutorial on Particle Filters for Online Nonlinear/Non-Gaussian Bayesian Tracking", 2002, Sec. V-A, Eq. 49
     Matrix<Scalar, NX, NX> covariance() const
     {
         const state_vector_t mean = weighted_mean();

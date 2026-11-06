@@ -22,7 +22,7 @@
 namespace ctrlpp::detail
 {
 
-// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013
+// @cite hauberg2013 -- Hauberg, Lauze & Pedersen, "Unscented Kalman Filtering on Riemannian Manifolds", 2013
 template <typename Scalar, std::size_t NY, typename Dynamics, typename Measurement, typename Strategy>
 class manifold_ukf_steps
 {
@@ -76,7 +76,7 @@ protected:
 
     void update_state_cache() { m_state_cache = so3::to_vec(m_q); }
 
-    // @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Sec. 3.2
+    // @cite hauberg2013 -- Hauberg, Lauze & Pedersen, "Unscented Kalman Filtering on Riemannian Manifolds", 2013, Sec. 3.2.3
     std::array<Eigen::Quaternion<Scalar>, num_sigma> propagate_manifold_sigma_points(const std::array<Eigen::Quaternion<Scalar>, num_sigma>& points, const input_vector_t& omega) const
     {
         std::array<Eigen::Quaternion<Scalar>, num_sigma> q_prop;
@@ -88,13 +88,13 @@ protected:
         return q_prop;
     }
 
-    // @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Alg. 1
+    // @cite hauberg2013 -- Hauberg, Lauze & Pedersen, "Unscented Kalman Filtering on Riemannian Manifolds", 2013, Sec. 3.2.3, Eq. 18
     detail::geodesic_mean_result<Scalar> compute_manifold_predicted_mean(const std::array<Eigen::Quaternion<Scalar>, num_sigma>& q_prop, const std::array<Scalar, num_sigma>& Wm) const
     {
         return detail::geodesic_mean_impl(q_prop, Wm, m_max_iter, m_tol);
     }
 
-    // @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Eq. 10
+    // @cite hauberg2013 -- Hauberg, Lauze & Pedersen, "Unscented Kalman Filtering on Riemannian Manifolds", 2013, Sec. 3.2.3, Eq. 19
     cov_matrix_t compute_manifold_predicted_covariance(
             const std::array<Eigen::Quaternion<Scalar>, num_sigma>& q_prop, const Eigen::Quaternion<Scalar>& q_mean, const std::array<Scalar, num_sigma>& Wc) const
     {
@@ -124,7 +124,7 @@ protected:
         return z_sigma;
     }
 
-    // @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013
+    // @cite hauberg2013 -- Hauberg, Lauze & Pedersen, "Unscented Kalman Filtering on Riemannian Manifolds", 2013, Sec. 3.2.4
     output_vector_t compute_predicted_measurement(const std::array<Scalar, num_sigma>& Wm, const std::array<output_vector_t, num_sigma>& z_sigma) const
     {
         output_vector_t z_pred = output_vector_t::Zero();
@@ -133,7 +133,7 @@ protected:
         return z_pred;
     }
 
-    // @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Eq. 12-13
+    // @cite hauberg2013 -- Hauberg, Lauze & Pedersen, "Unscented Kalman Filtering on Riemannian Manifolds", 2013, Sec. 3.2.4, Eqs. 36-37
     std::pair<meas_cov_t, Eigen::Matrix<Scalar, 3, ny>> compute_innovation_and_cross_covariance(
             const auto& sigma, const std::array<output_vector_t, num_sigma>& z_sigma, const output_vector_t& z_pred) const
     {

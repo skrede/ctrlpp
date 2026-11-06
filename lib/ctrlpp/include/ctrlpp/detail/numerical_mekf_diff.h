@@ -5,7 +5,7 @@
 // on the right by so3::exp(+/- step_scale * e_i), the multiplicative-EKF convention; a bias column
 // perturbs in Euclidean space by a step rounded to a representable difference.
 // @cite markley2003 -- Markley, "Attitude Error Representations for Kalman Filtering", 2003
-// @cite sola2018    -- Sola, Deray & Atchuthan, "A Micro Lie Theory for State Estimation in Robotics", 2018, Sec. 5.1
+// @cite sola2018    -- Sola, Deray & Atchuthan, "A micro Lie theory for state estimation in robotics", arXiv:1812.01537v9, 2021, Sec. II-G, Eqs. 41-42
 // @cite fornberg1988 -- Fornberg, "Generation of finite difference formulas on arbitrarily spaced grids", Math. Comp. 51:184, 1988
 // @cite nocedal2006  -- Nocedal & Wright, "Numerical Optimization", 2nd ed., 2006, Sec. 8.1
 

@@ -22,7 +22,7 @@ struct geodesic_mean_result
     Scalar residual;
 };
 
-// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Alg. 1
+// @cite hauberg2013 -- Hauberg, Lauze & Pedersen, "Unscented Kalman Filtering on Riemannian Manifolds", 2013, Sec. 3.1.1, Eq. 18
 template <typename Scalar, std::size_t NP>
 geodesic_mean_result<Scalar> geodesic_mean_impl(const std::array<Eigen::Quaternion<Scalar>, NP>& qs, const std::array<Scalar, NP>& Wm, std::int32_t max_iter, Scalar tol)
 {

@@ -2,7 +2,6 @@
 #define HPP_GUARD_CTRLPP_ESTIMATION_MEKF_H
 
 // @cite markley2003 -- Markley, "Attitude Error Representations for Kalman Filtering", 2003
-// @cite crassidis2003 -- Crassidis & Markley, "Unscented Filtering for Spacecraft Attitude Estimation", J. Guidance Control Dyn 26(4), 2003
 
 #include "ctrlpp/estimation/mekf_types.h"
 #include "ctrlpp/estimation/observer_policy.h"

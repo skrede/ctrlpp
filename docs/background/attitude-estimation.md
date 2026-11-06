@@ -5,7 +5,7 @@ three-dimensional space. Unlike Euclidean state estimation, orientations live
 on the SO(3) manifold &mdash; a curved space where standard vector addition does
 not apply. Special formulations are needed to respect this geometry and avoid
 singularities inherent in minimal rotation parametrizations
-[1, Ch. 7, pp. 211--266].
+[1, Secs. 7.2.3 and 8.1.1].
 
 Attitude estimation is fundamental to aerospace, robotics, and motion capture
 systems, where IMU sensors (gyroscopes, accelerometers, magnetometers) provide
@@ -14,7 +14,7 @@ noisy measurements of angular velocity and reference field directions.
 ## Rotation Representations
 
 Several representations exist for 3D rotations, each with trade-offs
-[1, Sec. 7.1, pp. 213--222]:
+[1, Secs. 7.2.1 and 7.2.3]:
 
 - **Rotation matrix** ($3 \times 3$, 9 parameters, 6 constraints): direct,
   singularity-free, but redundant. The constraint $R^\top R = I$,
@@ -28,9 +28,10 @@ Several representations exist for 3D rotations, each with trade-offs
 - **Euler angles** ($3$ parameters): intuitive but suffer from gimbal lock
   when the pitch angle reaches $\pm 90^\circ$.
 
-For estimation, quaternions are the preferred representation due to their
-compactness, lack of singularities, and efficient algebra
-[2, Sec. 3.2, pp. 73--80].
+For estimation, unit quaternions avoid the singularities of every
+three-parameter representation and form the rotation matrix without
+trigonometric functions, at the cost of a fourth parameter and a unit-norm
+constraint the estimator must enforce [1, Sec. 7.2.3], [2, App. B.3].
 
 ## Quaternion Conventions
 
@@ -38,12 +39,12 @@ A unit quaternion $q = [q_w, q_x, q_y, q_z]^\top$ with
 $\lVert q \rVert = 1$ represents a rotation. The Hamilton convention defines
 the product such that quaternion multiplication corresponds to rotation-matrix
 multiplication in the same order, $R(p \otimes q) = R(p)\,R(q)$
-[1, Sec. 7.1.3, pp. 218--220]. ctrlpp uses this convention with the w-first
+[2, App. B.3]. ctrlpp uses this convention with the w-first
 order shown.
 
 The time evolution under body-frame angular velocity
 $\omega = [\omega_x, \omega_y, \omega_z]^\top$ is
-[1, Sec. 7.2, pp. 223--226]:
+[5, App. B, Eq. (45)]:
 
 $$
 \dot{q} = \frac{1}{2} q \otimes \begin{bmatrix} 0 \\ \omega \end{bmatrix}
@@ -66,19 +67,19 @@ ctrlpp attitude filter performs, followed by a renormalization.
 At any rotation on SO(3), the tangent space is a 3-dimensional vector space
 isomorphic to $\mathbb{R}^3$ via the skew-symmetric matrix representation.
 Small rotations are represented as 3-vectors in this tangent space using the
-exponential and logarithmic maps [1, Sec. 7.3, pp. 227--234].
+exponential and logarithmic maps [1, Secs. 8.1.2 and 8.1.3].
 
 ### Exponential Map (Rodrigues' Formula)
 
 The exponential map takes a tangent vector $\phi \in \mathbb{R}^3$ to a
-rotation [1, eq. (7.18), p. 229]:
+rotation [1, Sec. 8.1.3, Eq. (8.23)]:
 
 $$
 \exp([\phi]_\times) = I + \frac{\sin \theta}{\theta} [\phi]_\times + \frac{1 - \cos \theta}{\theta^2} [\phi]_\times^2
 $$
 
 where $\theta = \lVert \phi \rVert$ and $[\phi]_\times$ is the $3 \times 3$
-skew-symmetric matrix. For quaternions:
+skew-symmetric matrix. For quaternions [6, App. B, Eq. (132)]:
 
 $$
 \exp(\phi) = \begin{bmatrix} \cos(\theta/2) \\ \frac{\sin(\theta/2)}{\theta} \phi \end{bmatrix}
@@ -87,7 +88,7 @@ $$
 ### Logarithmic Map
 
 The inverse recovers the tangent vector from a quaternion
-[1, eq. (7.22), p. 231]. Because $q$ and $-q$ are the same rotation, ctrlpp
+[6, App. B, Eq. (133)]. Because $q$ and $-q$ are the same rotation, ctrlpp
 first flips $q$ to the hemisphere $q_w \ge 0$, then computes
 
 $$
@@ -132,7 +133,7 @@ state $\delta\theta \in \mathbb{R}^3$.
 
 Propagate the reference quaternion using the bias-corrected angular velocity
 $\bar{\omega}_k = \omega_k - \hat{b}_{1:3}$
-[1, Sec. 7.4, pp. 240--245]:
+[3]:
 
 $$
 \hat{q}_{k|k-1} = \hat{q}_{k-1|k-1} \otimes \exp\!\left(T_s\, \bar{\omega}_k\right)
@@ -157,7 +158,7 @@ ctrlpp has no noise-input matrix and does not scale $Q$ by $T_s$.
 ### MEKF Update
 
 Compute the Kalman gain for the error state
-[1, Sec. 7.4, pp. 245--248], with $H_k$ the Jacobian of $h$ with respect to
+[3], with $H_k$ the Jacobian of $h$ with respect to
 $[\delta\theta; \delta b]$ at the nominal state:
 
 $$
@@ -200,7 +201,7 @@ reset are what the manifold adds.
 ## Manifold UKF
 
 The manifold UKF extends the unscented Kalman filter to SO(3) by performing
-sigma-point operations in the tangent space [4, pp. 108--114]:
+sigma-point operations in the tangent space [4, Sec. 3]:
 
 1. Generate sigma points $\mathcal{X}_i$ around zero in $\mathbb{R}^3$ from
    the tangent-space covariance
@@ -258,9 +259,9 @@ $$
 with $e_k = \hat{a} \times \hat{R}^\top e_z$ for the accelerometer direction
 $\hat{a}$, plus, with a magnetometer direction $\hat{m}$,
 $\hat{m} \times \hat{R}^\top b$ where $h = \hat{R}\hat{m}$ and
-$b = [\sqrt{h_x^2 + h_y^2},\, 0,\, h_z]^\top$. The magnetic term is a full
-cross product, so it also corrects roll and pitch. A sensor reading of exactly
-zero contributes no term.
+$b = [\sqrt{h_x^2 + h_y^2},\, 0,\, h_z]^\top$ [7, Sec. 3.4, Eqs. (45)--(46)]. The
+magnetic term is a full cross product, so it also corrects roll and pitch. A
+sensor reading of exactly zero contributes no term.
 
 Complementary filters are less optimal than the MEKF but require no covariance
 propagation, no matrix inversions, and have deterministic constant-time
@@ -279,9 +280,15 @@ Journal of Guidance, Control, and Dynamics, vol. 26, no. 2, pp. 311--317,
 2003.
 
 [4] S. Hauberg, F. Lauze, and K. S. Pedersen, "Unscented Kalman Filtering on
-(Sub)Riemannian Manifolds," Journal of Mathematical Imaging and Vision, vol.
+Riemannian Manifolds," Journal of Mathematical Imaging and Vision, vol.
 46, no. 1, pp. 103--120, 2013.
 
 [5] R. Mahony, T. Hamel, and J.-M. Pflimlin, "Nonlinear Complementary
 Filters on the Special Orthogonal Group," IEEE Transactions on Automatic
 Control, vol. 53, no. 5, pp. 1203--1218, 2008.
+
+[6] J. Sola, J. Deray, and D. Atchuthan, "A Micro Lie Theory for State
+Estimation in Robotics," arXiv:1812.01537v9, 2021.
+
+[7] S. O. H. Madgwick, "An Efficient Orientation Filter for Inertial and
+Inertial/Magnetic Sensor Arrays," report, 2010.

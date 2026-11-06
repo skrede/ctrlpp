@@ -1,7 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_ESTIMATION_MANIFOLD_UKF_H
 #define HPP_GUARD_CTRLPP_ESTIMATION_MANIFOLD_UKF_H
 
-// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013
+// @cite hauberg2013 -- Hauberg, Lauze & Pedersen, "Unscented Kalman Filtering on Riemannian Manifolds", 2013
 
 #include "ctrlpp/estimation/observer_policy.h"
 #include "ctrlpp/estimation/estimation_types.h"

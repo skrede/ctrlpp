@@ -68,7 +68,7 @@ public:
     }
 
     // A reading with no direction drops only its own correction term; the rate is integrated either way.
-    // @cite mahony2008 -- Mahony et al., 2008, Sec. III (IMU complementary filter)
+    // @cite mahony2008 -- Mahony, Hamel & Pflimlin, "Nonlinear Complementary Filters on the Special Orthogonal Group", 2008, Sec. V-A
     ctrlpp::expected<void, cf_update_error> update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel, Scalar dt)
     {
         if(const auto step = check_step(gyro, accel, dt); !step)
@@ -93,7 +93,7 @@ public:
         return {};
     }
 
-    // @cite mahony2008 -- Mahony et al., 2008, Sec. IV (MARG complementary filter)
+    // @cite mahony2008 -- Mahony, Hamel & Pflimlin, "Nonlinear Complementary Filters on the Special Orthogonal Group", 2008, Sec. V, Eq. 32
     ctrlpp::expected<void, cf_update_error> update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel, const Vector<Scalar, 3>& mag, Scalar dt)
     {
         if(const auto step = check_step(gyro, accel, dt, &mag); !step)
@@ -171,7 +171,7 @@ private:
         return fault;
     }
 
-    // @cite mahony2008 -- Mahony et al., 2008, Eq. 6 (quaternion integration with PI correction)
+    // @cite mahony2008 -- Mahony, Hamel & Pflimlin, "Nonlinear Complementary Filters on the Special Orthogonal Group", 2008, Eq. 48
     void integrate_gyro(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& e, Scalar dt)
     {
         m_bias -= m_k_i * e * dt;

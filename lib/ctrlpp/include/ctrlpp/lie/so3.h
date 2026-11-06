@@ -32,7 +32,7 @@ namespace ctrlpp::so3
 {
 
 // Rodrigues formula, with its Taylor expansion near zero.
-// @cite sola2018 Eq. 101
+// @cite sola2018 -- Sola, Deray & Atchuthan, "A micro Lie theory for state estimation in robotics", arXiv:1812.01537v9, 2021, Eq. 132
 template <ctrlpp_floating_scalar Scalar>
 Eigen::Quaternion<Scalar> exp(const Vector<Scalar, 3>& phi)
 {
@@ -66,7 +66,7 @@ Eigen::Quaternion<Scalar> exp(const Vector<Scalar, 3>& phi)
 
 // Canonicalizes to the w >= 0 hemisphere first, since antipodal quaternions are the same rotation
 // and the output must be unique.
-// @cite sola2018 Eq. 105
+// @cite sola2018 -- Sola, Deray & Atchuthan, "A micro Lie theory for state estimation in robotics", arXiv:1812.01537v9, 2021, Eq. 133
 template <typename Scalar>
 Vector<Scalar, 3> log(const Eigen::Quaternion<Scalar>& q)
 {
@@ -91,7 +91,7 @@ Vector<Scalar, 3> log(const Eigen::Quaternion<Scalar>& q)
     return inv_sinc_half * qc.vec();
 }
 
-// @cite sola2018 Sec. 4.3 (Hamilton quaternion product)
+// @cite sola2018 -- Sola, Deray & Atchuthan, "A micro Lie theory for state estimation in robotics", arXiv:1812.01537v9, 2021, App. B
 // @cite barfoot2017 Ch. 7 (quaternion composition under Hamilton convention)
 template <typename Scalar>
 Eigen::Quaternion<Scalar> compose(const Eigen::Quaternion<Scalar>& q1, const Eigen::Quaternion<Scalar>& q2)
@@ -99,7 +99,7 @@ Eigen::Quaternion<Scalar> compose(const Eigen::Quaternion<Scalar>& q1, const Eig
     return q1 * q2;
 }
 
-// @cite sola2018 Sec. 4.3 (quaternion inverse via conjugation for unit quaternions)
+// @cite sola2018 -- Sola, Deray & Atchuthan, "A micro Lie theory for state estimation in robotics", arXiv:1812.01537v9, 2021, App. B
 template <typename Scalar>
 Eigen::Quaternion<Scalar> conjugate(const Eigen::Quaternion<Scalar>& q)
 {

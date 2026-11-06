@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_ESTIMATION_SIGMA_POINTS_SO3_SIGMA_POINTS_H
 
 // @cite sola2018 -- Sola et al., "A micro Lie theory for state estimation in robotics", 2018
-// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013
+// @cite hauberg2013 -- Hauberg, Lauze & Pedersen, "Unscented Kalman Filtering on Riemannian Manifolds", 2013
 
 #include "ctrlpp/estimation/sigma_points/merwe_sigma_points.h"
 #include "ctrlpp/estimation/sigma_points/sigma_point_strategy.h"
