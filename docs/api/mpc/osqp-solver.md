@@ -2,7 +2,7 @@
 
 > **Requires OSQP.** Enable with `-DCTRLPP_BUILD_OSQP=ON` when configuring CMake.
 
-OSQP-based QP solver backend for linear MPC and MHE. Satisfies the `qp_solver` concept and can be injected as the `Solver` template parameter of `mpc` and `mhe`. Wraps the OSQP C library with RAII lifetime management, automatic warm-starting, and configurable tolerances.
+OSQP-based QP solver backend for linear MPC and MHE. Satisfies the `qp_solver` concept and can be named as the `Solver` template parameter of `mpc` and `mhe`; a configured instance is passed to `mpc`'s `create`, while `mhe` default-constructs its solver. Wraps the OSQP C library with RAII lifetime management, warm-starting from the vectors a caller supplies, and configurable tolerances. The type is move-only.
 
 ## Header
 
@@ -29,7 +29,7 @@ concept qp_solver = requires { typename S::scalar_type; }
     };
 ```
 
-Any type satisfying this concept can replace `osqp_solver` as the solver backend. There is one setup shape: `setup(problem)` returns a `ctrlpp::expected<void, E>` over the backend's own setup-error enum, through which the backend reports its setup failures. A backend with no setup failure mode writes a trivially succeeding fallible setup rather than an infallible one. `argmin_solver`'s setup refuses the problems its bridge cannot hold, with the `argmin_setup_error` enumerators listed under [argmin setup refusals](nmpc.md#argmin-setup-refusals). `osqp_solver` provides `setup` in every build mode, including `-fno-exceptions` and `CTRLPP_NO_EXCEPTIONS`.
+Any type satisfying this concept can replace `osqp_solver` as the solver backend. There is one setup shape: `setup(problem)` returns a `ctrlpp::expected<void, E>` over the backend's own setup-error enum, through which the backend reports its setup failures. A backend with no setup failure mode writes a trivially succeeding fallible setup rather than an infallible one. `argmin_solver`'s setup refuses the problems its bridge cannot hold, with the `argmin_setup_error` enumerators listed under [argmin setup refusals](nmpc.md#argmin-setup-refusals). `osqp_solver` provides `setup` in every build mode, including `-fno-exceptions`.
 
 ## Constructors
 
@@ -42,7 +42,7 @@ explicit osqp_solver(double eps_abs = 1e-3,
                      bool polishing = true);
 ```
 
-Constructs the solver with OSQP settings. Default values provide a good balance of speed and accuracy for typical MPC/MHE problems.
+Constructs the solver with OSQP settings. The tolerances and the iteration budget are OSQP's own defaults; `polishing` defaults to on here, where OSQP ships it off.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -78,7 +78,7 @@ ctrlpp::osqp_solver solver{ctrlpp::qp_preset::speed};
 
 ### osqp_setup_error
 
-Defined in `<ctrlpp/mpc/qp_types.h>` beside `solve_status` (which is unchanged; the per-iteration solve result stays a plain value enum).
+Defined in `<ctrlpp/mpc/qp_types.h>` beside `solve_status`, the plain value enum each solve reports.
 
 ```cpp
 enum class osqp_setup_error : std::uint8_t {
@@ -95,7 +95,7 @@ enum class osqp_setup_error : std::uint8_t {
 ctrlpp::expected<void, osqp_setup_error> setup(const qp_problem<double>& problem);
 ```
 
-Fallible setup: initializes the OSQP workspace from a QP problem (cost matrices P, q and constraint matrices A, l, u). Returns an empty `expected` on success and an `osqp_setup_error` on failure. This is the only setup API and is available in every build, including `-fno-exceptions` and `CTRLPP_NO_EXCEPTIONS` builds.
+Fallible setup: initializes the OSQP workspace from a QP problem (cost matrices P, q and constraint matrices A, l, u). Only the upper triangle of `P` is passed to OSQP, which is the convention `qp_problem::P` follows. Every call first releases the previous workspace, so a refused setup leaves none. Returns an empty `expected` on success and an `osqp_setup_error` on failure. This is the only setup API and is available in every build, including `-fno-exceptions` builds.
 
 An absent bound side is passed to OSQP in its own convention, `OSQP_INFTY` (1e30 in a double build). A lower bound at or below `-OSQP_INFTY`, including `-inf`, is passed as `-OSQP_INFTY`, and an upper bound at or above `+OSQP_INFTY`, including `+inf`, as `+OSQP_INFTY`. OSQP does not map an IEEE infinity itself: its duality gap would evaluate `inf * 0` to NaN, and every solve would run to `max_iter`. Every other value, NaN included, is passed unchanged. A lower bound of `+inf` or an upper bound of `-inf` poses an empty row rather than an absent side, so it is passed unchanged and OSQP's `l <= u` check refuses it with `osqp_setup_error::setup_failed`. A problem whose `l` or `u` length differs from the row count of A is refused the same way.
 
@@ -114,6 +114,14 @@ The bounds are mapped to `OSQP_INFTY` as at setup, into buffers sized at setup, 
 - `l` or `u` has a length other than 0 or the posed row count;
 - OSQP refuses the update, for example an empty row from an infinite initial state. OSQP keeps the previous q, l and u on a refused update, so solving anyway would answer the previous problem;
 - no setup has succeeded yet.
+
+## Limitations
+
+### The adapter checks the bound lengths, not the cost vector or the warm start
+
+`setup` refuses an `l` or `u` whose length differs from the row count of `A`, and OSQP's own data check refuses a `P` that is not `n x n` for `n = P.cols()`, an `A` that is not `m x n`, an empty `q` and an `l > u` row, all as `osqp_setup_error::setup_failed`. The length of `q` is not checked: OSQP reads `n` entries from it. `solve` refuses an `l` or `u` whose length is neither 0 nor the posed row count, but a non-empty `q`, `warm_x` or `warm_y` is read for the posed length (`n`, `n` and `m` entries) without a check, so a shorter vector is read past its end and a longer one is read only up to that length. `mpc` always passes vectors of the posed lengths. A caller driving `osqp_solver` directly owns those lengths.
+
+`solve` before a successful `setup`, or after a refused one, returns `solve_status::error` without solving. A second `setup` builds a new workspace for the new problem, so no warm start carries over.
 
 ## Type Aliases
 

@@ -4,7 +4,7 @@
 
 argmin-native QP solver backend for linear MPC and MHE, and the header-only alternative to [`osqp_solver`](osqp-solver.md). Satisfies the `qp_solver` concept and can be named as the `Solver` template parameter of `mpc` and `mhe`. A preconfigured instance is injected through `mpc`'s `create` (its `solver` argument); `mhe` constructs its solver from the `Solver` type. Wraps `argmin::sparse_admm_qp_solver`, a header-only C++ implementation of the same OSQP-class operator-splitting algorithm, returning results on a typed error channel rather than through C-pointer ownership.
 
-Both backends solve the canonical OSQP-form QP `min ½·xᵀPx + qᵀx s.t. l ≤ Ax ≤ u` and are interchangeable at a call site. Choosing this backend drops the vendored OSQP C library (and its C-pointer-ownership failure modes) from the build in favor of a header-only dependency.
+Both backends solve the canonical OSQP-form QP `min ½·xᵀPx + qᵀx s.t. l ≤ Ax ≤ u`, and a call site switches between them by changing the `Solver` argument. The setup-error alternative of `mpc`'s `construction_error` changes with it, from `osqp_setup_error` to `argmin_qp_setup_error`. Choosing this backend drops the vendored OSQP C library (and its C-pointer-ownership failure modes) from the build in favor of a header-only dependency.
 
 > **Not a real-time upgrade.** argmin's *sparse* QP variant is a host-tier solver that disclaims real-time safety in its own header (unbounded per-call heap). This backend is dependency relief plus a typed-error-channel upgrade, not an RT-safety upgrade; it is soft-RT exactly as `osqp_solver` is. See [rt-safety-matrix](../../rt-safety-matrix.md).
 
@@ -22,7 +22,7 @@ The class is defined only when `CTRLPP_BUILD_ARGMIN=ON` **and** argmin's QP head
 
 ## qp_solver Concept
 
-`argmin_qp_solver` satisfies the `qp_solver` concept defined in `<ctrlpp/mpc/qp_solver.h>`. The concept accepts one setup shape, a fallible `setup(problem)` returning a `ctrlpp::expected<void, E>` over the backend's own setup-error enum, so this solver models the concept in every build mode, including `-fno-exceptions` and `CTRLPP_NO_EXCEPTIONS`. Any type satisfying the concept can replace it as the solver backend.
+`argmin_qp_solver` satisfies the `qp_solver` concept defined in `<ctrlpp/mpc/qp_solver.h>`. The concept accepts one setup shape, a fallible `setup(problem)` returning a `ctrlpp::expected<void, E>` over the backend's own setup-error enum, so this solver models the concept in every build mode, including `-fno-exceptions`. Any type satisfying the concept can replace it as the solver backend.
 
 ## Constructors
 
@@ -35,7 +35,7 @@ explicit argmin_qp_solver(double eps_abs = 1e-3,
                           bool polishing = true);
 ```
 
-Constructs the solver, binding argmin's stable QP contract: tolerances, iteration budget, warm start and polish. The signature mirrors `osqp_solver` so the two backends are drop-in interchangeable.
+Constructs the solver, binding argmin's stable QP contract: tolerances, iteration budget, warm start and polish. It takes the same arguments, with the same defaults, as `osqp_solver`'s constructor.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -46,7 +46,7 @@ Constructs the solver, binding argmin's stable QP contract: tolerances, iteratio
 | `warm_starting` | `true` | Enable primal/dual warm-starting |
 | `polishing` | `true` | Enable solution polishing |
 
-The operator-splitting knobs (rho / sigma / alpha / adaptive_rho) are deliberately not exposed: per argmin coordination they are the volatile surface argmin intends to demote to an opt-in sub-struct, so this policy never touches them and a future reshape of those knobs is a no-op here.
+The operator-splitting knobs (rho, sigma, alpha, adaptive_rho) are not exposed and stay at argmin's defaults, because they are not part of argmin's stable QP contract.
 
 ### Preset constructor
 
@@ -90,7 +90,7 @@ enum class argmin_qp_setup_error : std::uint8_t {
 ctrlpp::expected<void, argmin_qp_setup_error> setup(const qp_problem<double>& problem);
 ```
 
-Fallible setup: poses and factorizes the problem once from the cost matrices P, q and constraint matrices A, l, u. P is read as upper-triangular, the same convention `osqp_solver` uses and `build_cost_matrix` emits; setup expands it to the full symmetric matrix argmin's solver requires. Returns an empty `expected` on success and an `argmin_qp_setup_error` on failure: `invalid_options` when an option lies outside argmin's domain (the budget or tolerances above), checked before the problem is posed, and `pose_failed` when argmin rejects the problem data. Either way no factorization exists, so `solve` returns `solve_status::error` until a `setup` succeeds. This is the only setup API and is available in every build, including `-fno-exceptions` and `CTRLPP_NO_EXCEPTIONS`.
+Fallible setup: poses and factorizes the problem from the cost matrices P, q and constraint matrices A, l, u, then runs one full ADMM solve of it. P is read as upper-triangular, the same convention `osqp_solver` uses and `build_cost_matrix` emits; setup expands it to the full symmetric matrix argmin's solver requires. Returns an empty `expected` on success and an `argmin_qp_setup_error` on failure: `invalid_options` when an option lies outside argmin's domain (the budget or tolerances above), checked before the problem is posed, and `pose_failed` when argmin rejects the problem data. After a refused first `setup` no factorization exists, so `solve` returns `solve_status::error` until a `setup` succeeds; a refused second `setup` is described under [Limitations](#limitations). This is the only setup API and is available in every build, including `-fno-exceptions`.
 
 ### solve
 
@@ -98,7 +98,15 @@ Fallible setup: poses and factorizes the problem once from the cost matrices P, 
 qp_result<double> solve(const qp_update<double>& update);
 ```
 
-Vectors-only resolve reusing the frozen factorization: warm-starts from the retained iterate (or from `update.warm_x`/`update.warm_y` when supplied) and runs argmin's `resolve_into`. Returns a `qp_result` with the primal/dual solution, solver status, objective value, iteration count, and residuals. Calling `solve` before a successful `setup` returns `solve_status::error`. Note `qp_result::solve_time` is always `0`: argmin's solver takes no timing measurements.
+Vectors-only resolve reusing the frozen factorization: warm-starts from the retained iterate (or from `update.warm_x` and `update.warm_y` when both are supplied) and runs argmin's `resolve_into`. `update.q`, `update.l` and `update.u` replace the posed vectors and must each have the posed length; unlike `osqp_solver`, an empty vector is refused rather than read as unchanged. Returns a `qp_result` with the primal/dual solution, solver status, objective value, iteration count, and residuals. Calling `solve` before a successful `setup` returns `solve_status::error`. Note `qp_result::solve_time` is always `0`: argmin's solver takes no timing measurements.
+
+## Limitations
+
+### The adapter leaves every dimension check to argmin
+
+The adapter itself checks nothing about the problem's shape. At `setup`, argmin refuses a `P` that is not square, an `A`, `q`, `l` or `u` that does not match it, an empty problem, a non-finite entry, an `l > u` row and a `P` that is not symmetric after the upper triangle is reflected, all as `argmin_qp_setup_error::pose_failed`. At `solve`, argmin refuses a `q`, `l` or `u` of any length other than the posed one, empty included, and `solve` returns `solve_status::error`. A warm start is applied only when `warm_x` and `warm_y` are both non-empty; argmin uses `warm_x` only when its length is the posed decision count, and replaces a `warm_y` of another length by zeros. `mpc` always passes vectors of the posed lengths.
+
+`solve` before a successful `setup` returns `solve_status::error`. A second `setup` that argmin refuses before it stores the new problem (any data check, an asymmetric `P` included) leaves the earlier problem posed and the adapter marked as posed, so a later `solve` answers the earlier problem. One refused by a failed factorization leaves nothing posed, and `solve` returns `solve_status::error`.
 
 ## Type Aliases
 
@@ -110,7 +118,7 @@ The sparse ADMM QP backend operates in double precision only.
 
 ## Usage Example
 
-`argmin_qp_solver` is a drop-in replacement for `osqp_solver`: swap the `Solver` template argument. A preconfigured instance is injected through the `solver` argument of `mpc`'s `create`, as below; `mhe` takes no solver argument and constructs its solver from the `Solver` type.
+`argmin_qp_solver` replaces `osqp_solver` by swapping the `Solver` template argument. A preconfigured instance is injected through the `solver` argument of `mpc`'s `create`, as below; `mhe` takes no solver argument and constructs its solver from the `Solver` type.
 
 ```cpp
 #include <ctrlpp/mpc.h>

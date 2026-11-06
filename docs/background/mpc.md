@@ -52,6 +52,13 @@ where:
 - $Q_f \succeq 0$ penalizes the terminal state
 - The inequality constraints encode actuator limits and safety bounds
 
+ctrlpp's `mpc` poses this problem with three conventions of its own. Its
+configured `Q` and `Q_f` weigh the output, so the state weights are
+$C^\top Q C$ and $C^\top Q_f C$. It requires $R \succeq 0$ only, and refuses
+a singular $R$ only when the terminal cost comes from the Riccati solve below,
+which inverts it. The state bounds apply to $x_1, \ldots, x_N$, since $x_0$ is
+the measured state.
+
 ## QP Standard Form
 
 For linear systems with quadratic cost, the MPC problem reduces to a
@@ -72,25 +79,26 @@ and small input dimensions.
 
 ### Sparse (Non-Condensed) Formulation
 
-Keep both states and inputs as decision variables. Stacking
-$z = [x_0^\top, u_0^\top, x_1^\top, u_1^\top, \ldots, x_N^\top]^\top$:
+Keep both states and inputs as decision variables. ctrlpp's `mpc` stacks
+$z = [x_0^\top, \ldots, x_N^\top, u_0^\top, \ldots, u_{N-1}^\top]^\top$,
+followed by the slacks of the softened state bounds when they are present:
 
 $$
-\min_z \; \frac{1}{2} z^\top H \, z + q^\top z
+\min_z \; \frac{1}{2} z^\top P \, z + q^\top z
+\quad \text{subject to} \quad l \le A_c \, z \le u
 $$
 
-$$
-\text{subject to} \quad A_{\text{eq}} \, z = b_{\text{eq}} \quad \text{(dynamics)}
-$$
+The rows of $A_c$ hold, in order, $x_0$ pinned to the measured state, the
+dynamics $x_{k+1} - A x_k - B u_k = 0$ as equality rows, then the state, input,
+rate and terminal-set rows that are configured. This is the canonical form OSQP
+and argmin's sparse solver accept.
 
-$$
-l \le z \le u \quad \text{(bounds)}
-$$
-
-This has $N \cdot (n_x + n_u) + n_x$ decision variables but the matrices are
-block-sparse, enabling efficient specialized solvers. The sparse formulation
-preserves problem structure, is more efficient for long horizons, and enables
-warm-starting between time steps [1, Sec. 11.3, p. 203].
+This has $N \cdot (n_x + n_u) + n_x$ decision variables, plus $N n_x$ slacks
+when the state bounds are softened, but the matrices are block-sparse, enabling
+efficient specialized solvers. The sparse formulation preserves problem
+structure, is more efficient for long horizons, and enables warm-starting
+between time steps [1, Sec. 11.3, p. 203]. The controller warm-starts each
+solve from the previous solve's primal and dual, unshifted.
 
 ## Constraints
 
@@ -98,22 +106,29 @@ MPC naturally incorporates [1, Sec. 11.4, pp. 206--210]:
 
 - **Input constraints**: actuator limits $u_{\min} \le u_i \le u_{\max}$
 - **State constraints**: safety limits $x_{\min} \le x_i \le x_{\max}$
-- **Rate constraints**: $\Delta u_{\min} \le u_i - u_{i-1} \le \Delta u_{\max}$
+- **Rate constraints**: $\Delta u_{\min} \le u_i - u_{i-1} \le \Delta u_{\max}$.
+  ctrlpp's `mpc` takes the symmetric form $\lvert u_i - u_{i-1} \rvert \le \Delta u_{\max}$,
+  with $u_{-1}$ the previously applied input
 
 ### Soft Constraints
 
 Hard state constraints can render the QP infeasible if the dynamics cannot
 satisfy them from the current state. Soft constraints add slack variables
 with penalty weights to maintain feasibility
-[1, Sec. 11.4, pp. 210--212]:
+[1, Sec. 11.4, pp. 210--212]. ctrlpp's `mpc` adds one free slack $s_i$ per
+state and stage $i = 1, \ldots, N$ and penalizes it quadratically:
 
 $$
-x_{\min} - \epsilon_i \le x_i \le x_{\max} + \epsilon_i, \qquad \epsilon_i \ge 0
+x_{\min} \le x_i - s_i \le x_{\max},
+\qquad \text{with the added cost} \quad \frac{1}{2} \sum_{i=1}^{N} s_i^\top \operatorname{diag}(\rho) \, s_i
 $$
 
-with an additional cost term $\rho \sum_i \lVert \epsilon_i \rVert_1$ where
-$\rho$ is the penalty weight. L1 penalties produce exact constraint
-satisfaction when the penalty is sufficiently large.
+where $\rho$ is `soft_penalty`, or `soft_state_penalty` per state. At the
+optimum $s_i$ is $x_i$ minus its projection onto the box, so the added cost is
+$\tfrac{1}{2} \rho \, \operatorname{dist}(x_i, [x_{\min}, x_{\max}])^2$.
+This penalty is inexact: a bound whose multiplier in the hard problem is $\mu$
+is still violated by about $\mu / \rho$ when the hard problem is feasible, for
+every finite $\rho$. The input, rate and terminal-set rows are never softened.
 
 ## Terminal Cost and Stability
 
@@ -163,9 +178,9 @@ positively invariant under that law once it is encoded in the QP:
   $P$'s eigenbasis. That box is not positively invariant under $u = K x$ and
   carries no recursive-feasibility guarantee.
 - **Robust polytope** (`compute_polytopic_invariant_set`): the states that stay
-  inside the state box under every input in $\mathcal{U}$, a robust
-  control-invariant set. It is a valid object for robust MPC, but it is not the
-  terminal set of the LQR law.
+  inside the state polytope under every input in $\mathcal{U}$, a robust
+  control-invariant set, computed for $n_x \le 4$. It is a valid object for
+  robust MPC, but it is not the terminal set of the LQR law.
 
 With the DARE terminal cost, the same gain $K$, $\mathcal{X}_f = \mathcal{O}_\infty$,
 a nominal model, regulation to the origin, and hard state constraints, the
@@ -188,6 +203,15 @@ $$
 
 The reference pair must satisfy the steady-state equation
 $x_{\text{ref}} = A x_{\text{ref}} + B u_{\text{ref}}$.
+
+ctrlpp's `mpc` does not implement this target formulation. Its tracking
+overloads penalize the output error $C x_i - y_{\text{ref}}$ with $Q$ and keep
+the input cost $u_i^\top R \, u_i$ about $u = 0$; with the Riccati terminal
+cost, the terminal state is weighted about
+$C^\top (C C^\top)^{-1} y_{\text{ref}}$. No $(x_{\text{ref}}, u_{\text{ref}})$
+is solved for, and no disturbance model is estimated, so a reference whose
+equilibrium needs a nonzero input, or a constant disturbance, leaves a
+steady-state offset (see [the mpc limitations](../api/mpc/mpc.md#limitations)).
 
 ## References
 

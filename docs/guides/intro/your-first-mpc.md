@@ -56,7 +56,6 @@ int main()
         .horizon = 20,
         .Q = Eigen::Vector2d(10.0, 1.0).asDiagonal(),
         .R = Eigen::Matrix<double, 1, 1>::Identity(),
-        .Qf = std::nullopt,
         .u_min = Eigen::Matrix<double, 1, 1>::Constant(-1.0),
         .u_max = Eigen::Matrix<double, 1, 1>::Constant(1.0),
         .x_min = Eigen::Vector2d(
@@ -124,15 +123,21 @@ At every time step:
 | Field     | Purpose                                         |
 | --------- | ----------------------------------------------- |
 | `horizon` | Number of prediction steps                      |
-| `Q`       | State cost weight (penalize deviation from zero)|
+| `Q`       | Output cost weight; with `C = I`, as here, it weighs the state |
 | `R`       | Input cost weight (penalize control effort)     |
-| `u_min/max` | Input constraints (actuator limits)           |
-| `x_min/max` | State constraints (e.g., velocity limits)     |
+| `u_min/max` | Input constraints (actuator limits), always hard |
+| `x_min/max` | State constraints (e.g., velocity limits), softened by default |
+
+`Qf` is left unset, so the terminal cost is the DARE solution. The velocity limits
+are softened: the QP may exceed them at a quadratic cost set by `soft_penalty`, so
+they hold only approximately: in this run the velocity peaks at 2.0018. Set
+`.hard_state_constraints = true` to pose them as hard constraints; see
+[soft state constraints](../../api/mpc/mpc.md#soft-state-constraints).
 
 ## Next Steps
 
-- [MPC API Reference](../../api/mpc/mpc.md)<br/> full interface, diagnostics, warm
-  starting
+- [MPC API Reference](../../api/mpc/mpc.md)<br/> full interface, diagnostics, terminal
+  sets, limitations
 - [Solver Injection Guide](../mpc/solver-injection.md)<br/> swapping QP/NLP
   solver backends
 - [Observer-Controller Composition](../estimation/observer-controller.md)<br/>

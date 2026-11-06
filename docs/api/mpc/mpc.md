@@ -1,18 +1,24 @@
 # mpc
 
-> **Requires OSQP.** Enable with `-DCTRLPP_BUILD_OSQP=ON` when configuring CMake.
+> **Requires a QP backend.** `osqp_solver` needs `-DCTRLPP_BUILD_OSQP=ON` and `argmin_qp_solver` needs `-DCTRLPP_BUILD_ARGMIN=ON` when configuring CMake.
 
-Linear Model Predictive Controller using sparse QP optimization. Solves a receding-horizon regulation or tracking problem for a discrete-time linear state-space system with input, state, and rate constraints. Terminal cost defaults to the DARE solution when not provided explicitly. State constraints are softened by default to ensure solver feasibility.
+Linear Model Predictive Controller using sparse QP optimization. Solves a receding-horizon regulation or tracking problem for a discrete-time linear state-space system with input, state, and rate constraints. Terminal cost defaults to the DARE solution when not provided explicitly. State bounds are softened by default with a quadratic penalty on a slack, so the state bounds alone cannot make a solve infeasible; the input, rate and terminal-set rows stay hard (see [Soft state constraints](#soft-state-constraints)).
 
 ## Header and Alias
 
 | Form | Header |
 |------|--------|
-| `mpc<Scalar, NX, NU, Solver>` | `#include <ctrlpp/mpc.h>` |
-| `mpc_config<Scalar, NX, NU>` | `#include <ctrlpp/mpc/mpc_config.h>` (also included by `ctrlpp/mpc.h`) |
+| `mpc<Scalar, NX, NU, Solver, NY>` | `#include <ctrlpp/mpc.h>` |
+| `mpc_config<Scalar, NX, NU, NY>` | `#include <ctrlpp/mpc/mpc_config.h>` (also included by `ctrlpp/mpc.h`) |
+| `mpc_diagnostics<Scalar>` | `#include <ctrlpp/mpc/diagnostics.h>` (also included by `ctrlpp/mpc.h`) |
+| `solve_output`, `solver_error`, `controller_construction_error`, `qp_problem`, `qp_update`, `qp_result` | `#include <ctrlpp/mpc/qp_types.h>` (also included by `ctrlpp/mpc.h`) |
+| the `qp_solver` concept | `#include <ctrlpp/mpc/qp_solver.h>` (also included by `ctrlpp/mpc.h`) |
+| `mpc_construction_error<SetupError>` | `#include <ctrlpp/mpc/terminal_cost.h>` (also included by `ctrlpp/mpc.h`) |
+
+`ctrlpp/mpc.h` also includes two headers whose functions live in `ctrlpp::detail` and are not called directly: `ctrlpp/mpc/qp_formulation.h` assembles the sparse QP described under [Soft state constraints](#soft-state-constraints), and `ctrlpp/mpc/config_validation.h` holds the admission rules listed under [Rejections](#rejections), which `nmpc` shares.
 
 ```cpp
-template <typename Scalar, std::size_t NX, std::size_t NU, qp_solver Solver>
+template <typename Scalar, std::size_t NX, std::size_t NU, qp_solver Solver, std::size_t NY = NX>
 class mpc;
 ```
 
@@ -20,30 +26,37 @@ class mpc;
 
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
-| `Scalar` | floating-point | Numeric type (`double`, `float`) |
+| `Scalar` | `ctrlpp_floating_scalar`, and the solver's `scalar_type` | Numeric type. Both shipped backends are `double` only |
 | `NX` | `>= 1` | State dimension |
 | `NU` | `>= 1` | Input dimension |
-| `Solver` | satisfies `qp_solver` | QP solver backend. See [osqp-solver](osqp-solver.md). |
+| `Solver` | satisfies `qp_solver` | QP solver backend. See [osqp-solver](osqp-solver.md) and [argmin-qp-solver](argmin-qp-solver.md). |
+| `NY` | defaults to `NX` | Output dimension: the weights `Q` and `Qf` and the tracking references are in output space |
 
 ## mpc_config
 
-Configuration struct `mpc_config<Scalar, NX, NU>` passed at construction.
+Configuration struct `mpc_config<Scalar, NX, NU, NY = NX>` passed at construction.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `horizon` | `std::int32_t` | `1` | Prediction horizon length N |
-| `Q` | `Matrix<Scalar, NX, NX>` | Identity | State cost weight |
-| `R` | `Matrix<Scalar, NU, NU>` | Identity | Input cost weight |
-| `Qf` | `optional<Matrix<Scalar, NX, NX>>` | DARE solution | Terminal cost weight. Computed from the DARE solve when not provided; `create` refuses the configuration if that solve declines. |
-| `u_min` | `optional<Vector<Scalar, NU>>` | none | Element-wise lower input bound |
-| `u_max` | `optional<Vector<Scalar, NU>>` | none | Element-wise upper input bound |
-| `x_min` | `optional<Vector<Scalar, NX>>` | none | Element-wise lower state bound |
-| `x_max` | `optional<Vector<Scalar, NX>>` | none | Element-wise upper state bound |
-| `du_max` | `optional<Vector<Scalar, NU>>` | none | Maximum input rate of change per step |
-| `soft_penalty` | `Scalar` | `1e4` | L1 penalty for soft state constraints |
-| `soft_state_penalty` | `optional<Vector<Scalar, NX>>` | none | Per-state soft constraint penalty |
-| `terminal_constraint_set` | `optional<terminal_set<Scalar, NX>>` | none | Ellipsoidal or polyhedral terminal set, validated at construction (see [Rejections](#rejections)); see [Terminal sets](#terminal-sets) for which one is invariant |
+| `Q` | `Matrix<Scalar, NY, NY>` | Identity | Output cost weight; the controller weighs the state by `C^T Q C` |
+| `R` | `Matrix<Scalar, NU, NU>` | Identity | Input cost weight, about `u = 0` |
+| `Qf` | `optional<Matrix<Scalar, NY, NY>>` | DARE solution | Terminal output weight, posed on the state as `C^T Qf C`. When not provided, the terminal state weight is the DARE solution for `(A, B, C^T Q C, R)`; `create` refuses the configuration if that solve declines. |
+| `u_min` | `optional<Vector<Scalar, NU>>` | none | Element-wise lower input bound on `u_0 ... u_{N-1}` |
+| `u_max` | `optional<Vector<Scalar, NU>>` | none | Element-wise upper input bound on `u_0 ... u_{N-1}` |
+| `x_min` | `optional<Vector<Scalar, NX>>` | none | Element-wise lower state bound on `x_1 ... x_N` |
+| `x_max` | `optional<Vector<Scalar, NX>>` | none | Element-wise upper state bound on `x_1 ... x_N` |
+| `du_max` | `optional<Vector<Scalar, NU>>` | none | Symmetric rate bound `|u_k - u_{k-1}| <= du_max`; for `k = 0`, `u_{-1}` is the previous input (see [set_applied_input](#set_applied_input)) |
+| `soft_penalty` | `Scalar` | `1e4` | Quadratic weight on the state-bound slacks (see [Soft state constraints](#soft-state-constraints)) |
+| `soft_state_penalty` | `optional<Vector<Scalar, NX>>` | none | Per-state slack weights; replaces `soft_penalty` when set |
+| `terminal_constraint_set` | `optional<terminal_set<Scalar, NX>>` | none | Ellipsoidal or polyhedral set for `x_N`, always hard, validated at construction (see [Rejections](#rejections)); see [Terminal sets](#terminal-sets) for which one is invariant |
 | `hard_state_constraints` | `bool` | `false` | When true, state constraints are hard (not softened) |
+
+### Soft state constraints
+
+The state bounds are softened when `x_min` or `x_max` is set and `hard_state_constraints` is false. The QP then carries one free slack `s_{k,i}` per state component and stage `k = 1 ... N`, couples it into the bound row as `x_min_i <= x_{k,i} - s_{k,i} <= x_max_i`, and puts the weight `rho_i` (`soft_state_penalty(i)` when set, else `soft_penalty`) on the slack's diagonal of the cost Hessian, with no linear term. The QP objective is `z^T P z / 2 + q^T z`, so a slack costs `rho_i s^2 / 2`: a quadratic penalty on the distance from `x_{k,i}` to its bounds.
+
+The penalty is not exact. Where the hard problem is feasible and its bound carries the multiplier `mu`, the softened bound is still violated by about `mu / rho_i`, however large `rho_i` is. On `x+ = x + u`, `N = 1`, `Q = R = Qf = 1`, `x_max = 1`, tracking `y_ref = 10` from `x_0 = 0`, the hard problem has `mu = 8`, and the soft solution violates the bound by `8 / (2 + rho)`: 0.078 at `rho = 1e2` and 8.0e-4 at `rho = 1e4`. Set `hard_state_constraints = true` where a bound must hold.
 
 ## Construction
 
@@ -51,11 +64,11 @@ Configuration struct `mpc_config<Scalar, NX, NU>` passed at construction.
 using construction_error = mpc_construction_error<SetupError>;
 // = std::variant<controller_construction_error, dare_error, SetupError>
 
-static expected<mpc, construction_error> create(const discrete_state_space<Scalar, NX, NU, NX>& system,
-                                                const mpc_config<Scalar, NX, NU>& config);
+static expected<mpc, construction_error> create(const discrete_state_space<Scalar, NX, NU, NY>& system,
+                                                const mpc_config<Scalar, NX, NU, NY>& config);
 
-static expected<mpc, construction_error> create(const discrete_state_space<Scalar, NX, NU, NX>& system,
-                                                const mpc_config<Scalar, NX, NU>& config,
+static expected<mpc, construction_error> create(const discrete_state_space<Scalar, NX, NU, NY>& system,
+                                                const mpc_config<Scalar, NX, NU, NY>& config,
                                                 Solver solver);
 ```
 
@@ -132,7 +145,7 @@ Two alternatives are deliberately not implemented. Validating at the first solve
 
 ## Failure contract
 
-Both `mpc` and `nmpc` share one soft-constraint and failure contract. Every
+Both `mpc` and `nmpc` share one failure contract. Every
 `solve` overload returns `ctrlpp::expected<solve_output<Scalar, NU>, solver_error>`:
 
 - On the **success branch** the result holds a `solve_output` whose `input` field
@@ -191,6 +204,13 @@ ctrlpp::expected<solve_output<Scalar, NU>, solver_error> solve(const Vector<Scal
 ```
 
 Solves the QP for tracking a constant output reference across the entire horizon.
+The stage cost becomes `(C x_k - y_ref)^T Q (C x_k - y_ref) / 2` plus the input
+cost `u_k^T R u_k / 2`, still about `u = 0`. With `Qf` set the terminal cost is
+`(C x_N - y_ref)^T Qf (C x_N - y_ref) / 2`; with `Qf` unset it is the DARE weight
+`P` about `C^T (C C^T)^{-1} y_ref`, the minimum-norm state whose output is
+`y_ref`. No steady-state target `(x_ss, u_ss)` is computed, so a reference whose
+equilibrium needs a nonzero input settles with an offset; see
+[Limitations](#limitations).
 
 ### solve (trajectory reference)
 
@@ -199,9 +219,11 @@ ctrlpp::expected<solve_output<Scalar, NU>, solver_error> solve(const Vector<Scal
                                                                std::span<const Vector<Scalar, NY>> y_ref);
 ```
 
-Solves the QP for tracking a time-varying output reference trajectory. The span
-must contain at least `horizon + 1` elements; an undersized span is rejected via
-the error branch (`solver_error::invalid_problem`) rather than read out of bounds.
+Solves the QP for tracking a time-varying output reference trajectory, with
+`y_ref[k]` in the stage cost of `x_k` and `y_ref[N]` in the terminal cost, each
+weighted as for the constant reference. The span must contain at least
+`horizon + 1` elements; an undersized span is rejected via the error branch
+(`solver_error::invalid_problem`) rather than read out of bounds.
 
 ### set_applied_input
 
@@ -210,7 +232,8 @@ void set_applied_input(const Vector<Scalar, NU>& u);
 ```
 
 Records the control input the caller actually commanded. The internal previous
-input (which anchors the rate constraint) is updated only on a successful solve;
+input (which anchors the rate constraint) starts at zero and is updated only on a
+successful solve;
 this accessor lets the caller keep that reference consistent when it commands a
 different input, for example after an error branch or external saturation.
 
@@ -232,10 +255,21 @@ guarded: before the first valid solve it returns the error branch
 mpc_diagnostics<Scalar> diagnostics() const;
 ```
 
-Returns solver diagnostics from the last solve, including status, iteration count, solve time, cost, and residuals.
+Returns the diagnostics of the last solve, defined in `ctrlpp/mpc/diagnostics.h`. They are written on every solve that reaches the backend, failed ones included; before the first solve every field holds its default (`status = solve_status::error`, zeros).
+
+| Field | What `mpc` writes |
+|-------|-------------------|
+| `status` | The backend's `solve_status`, or `invalid_backend_result` when the controller discards the answer (see [Failure contract](#failure-contract)) |
+| `iterations` | The backend's iteration count |
+| `solve_time` | The backend's solve time; always `0` on `argmin_qp_solver` |
+| `cost` | The backend's QP objective, which omits the constant reference terms, so it can be negative while tracking |
+| `primal_residual`, `dual_residual` | The backend's residuals |
+| `max_constraint_violation`, `max_path_constraint_violation`, `max_terminal_constraint_violation`, `total_slack` | Always `0`; the linear controller does not compute them |
+| `stop_criterion` | Always `nlp_stop_criterion::unreported` |
 
 ## Terminal sets
 
+<!-- snippet: fragment -->
 ```cpp
 #include <ctrlpp/mpc/invariant_set.h>
 
@@ -255,7 +289,7 @@ using terminal_ingredients_error = std::variant<terminal_set_error, dare_error>;
 | Field | Type | What it is |
 |-------|------|------------|
 | `Qf` | `Matrix<Scalar, NX, NX>` | The DARE solution `P`, the terminal cost |
-| `set` | `ellipsoidal_set<Scalar, NX>` | The ellipsoid `{x : x^T P x <= alpha}` with the largest `alpha` inside the input and state faces. The QP encodes its inscribed box in `P`'s eigenbasis, which is not positively invariant under `u = K x` and gives no recursive-feasibility guarantee |
+| `set` | `ellipsoidal_set<Scalar, NX>` | The ellipsoid `{x : x^T P x <= alpha}` with the largest `alpha` inside the input and state faces. The QP encodes its inscribed box in `P`'s eigenbasis, which is not positively invariant under `u = K x` and gives no recursive-feasibility guarantee. Only the input bounds are checked to straddle zero: a state bound that excludes the origin still caps `alpha` at a positive level, and the ellipsoid then lies outside that bound |
 | `invariant_set` | `expected<polytopic_set<Scalar, NX>, terminal_set_error>` | The maximal output admissible set of `A + B K` inside `{x_min <= x <= x_max, u_min <= K x <= u_max}`: the invariant terminal set of the LQR law, as a minimal set of unit rows |
 
 The function's own error channel carries the failures of `Qf` and `set`, as one of two alternatives. The `terminal_set_error` alternative is `singular_input_weight`, checked first with the same rank test as `mpc::create` and independently of `A`, or the ellipsoid's refusal, `input_zero_not_interior` or `empty_terminal_set`. The `dare_error` alternative is a Riccati solve that declines, carrying the solve's own enumerator, as `mpc::create` does with `Qf` unset. The output admissible set has its own outcome in its field, so its refusal never fails the call:
@@ -277,7 +311,7 @@ Every terminal-set construction reports its refusals as one `terminal_set_error`
 | Enumerator | Meaning |
 |------------|---------|
 | `input_zero_not_interior` | Some input component has `u_min(i) >= 0` or `u_max(i) <= 0`, so `u = 0`, the LQR input at the origin, is not strictly interior to `[u_min, u_max]` and the input-face `alpha` bound would be meaningless |
-| `empty_terminal_set` | Capping `alpha` against the input and state faces yields a non-positive or non-finite `alpha`: no consistent bounded ellipsoid exists |
+| `empty_terminal_set` | Capping `alpha` against the input and state faces yields a non-positive or non-finite `alpha`: no consistent bounded ellipsoid exists. From `compute_polytopic_invariant_set`, the input polytope has no vertex |
 | `halfplanes_truncated` | The polytopic invariant-set halfplane count hit its resource bound, so the representation would be a truncated, and therefore unsound, outer approximation |
 | `not_converged` | The construction reached its iteration bound without a fixed point; no set is returned |
 | `closed_loop_not_stable` | `A + B K` is not strictly stable (the Stein equation has no positive definite solution), so no bounded output admissible set exists |
@@ -290,6 +324,7 @@ Every terminal-set construction reports its refusals as one `terminal_set_error`
 
 ### compute_output_admissible_set
 
+<!-- snippet: fragment -->
 ```cpp
 #include <ctrlpp/mpc/output_admissible_set.h>
 
@@ -312,7 +347,18 @@ The construction stacks the rows `C A_K^k` until they bound the set, then append
 
 ### compute_polytopic_invariant_set
 
-`compute_polytopic_invariant_set(A, B, state_constraints, input_constraints, max_iterations, convergence_tol)` iterates the robust pre-image to the set of states that stay inside the state polytope under every input in the input polytope. That is a robust control-invariant set, a valid object for robust MPC; it is not the terminal set of the LQR law. Use `invariant_set` for that.
+```cpp
+template <typename Scalar, std::size_t NX, std::size_t NU>
+expected<polytopic_set<Scalar, NX>, terminal_set_error>
+compute_polytopic_invariant_set(const Matrix<Scalar, NX, NX>& A_sys, const Matrix<Scalar, NX, NU>& B_sys,
+                                const polytopic_set<Scalar, NX>& state_constraints,
+                                const polytopic_set<Scalar, NU>& input_constraints,
+                                std::int32_t max_iterations = 100, Scalar convergence_tol = Scalar{1e-6});
+```
+
+Declared in `ctrlpp/mpc/invariant_set.h`. It iterates the robust pre-image `{x : A x + B u in S for every vertex u of the input polytope}`, intersected with the current set, starting from the state polytope: the result is the set of states that stay inside the state polytope under every input in the input polytope. That is a robust control-invariant set, a valid object for robust MPC; it is not the terminal set of the LQR law. Use `invariant_set` for that.
+
+A row is dropped only when it is parallel to a kept row and no tighter, within `convergence_tol`; no linear program removes other redundant rows. The iteration stops when a step leaves the row count unchanged. It refuses with `empty_terminal_set` when the input polytope has no vertex, `halfplanes_truncated` when more than 500 rows survive the filter, and `not_converged` after `max_iterations` steps. `NX <= 4` is a compile-time requirement.
 
 ### Using the invariant terminal set
 
@@ -336,7 +382,7 @@ ctrlpp::mpc_config<double, NX, NU> cfg{
     .hard_state_constraints  = true};
 ```
 
-The outer channel carries a `terminal_ingredients_error`, the `std::variant` of a `terminal_set_error` (a singular `R`, or the ellipsoid's refusal) and the Riccati solve's own `dare_error`; the `invariant_set` channel carries a `terminal_set_error`. Either way a refusal names its cause; `report` stands for the caller's handling, which in the example visits the variant, prints the enumerator's name through an exhaustive `switch` for each error type, and exits. Recursive feasibility and stability of the origin follow from this configuration only with hard state constraints, a nominal model and regulation to the origin; see [background/mpc](../../background/mpc.md). The full closed loop is in `examples/mpc/ctrlpp_mpc_05_terminal_set.cpp`.
+The outer channel carries a `terminal_ingredients_error`, the `std::variant` of a `terminal_set_error` (a singular `R`, or the ellipsoid's refusal) and the Riccati solve's own `dare_error`; the `invariant_set` channel carries a `terminal_set_error`. Either way a refusal names its cause; `report` stands for the caller's handling, which in the example visits the variant, prints the enumerator's name through an exhaustive `switch` for each error type, and exits. `terminal_ingredients` takes the state weight, while `mpc_config`'s `Q` and `Qf` are output weights posed as `C^T Q C` and `C^T Qf C`; the two agree here because the plant has `C = I`. Recursive feasibility and stability of the origin follow from this configuration only with hard state constraints, a nominal model and regulation to the origin; see [background/mpc](../../background/mpc.md). The full closed loop is in `examples/mpc/ctrlpp_mpc_05_terminal_set.cpp`.
 
 ## Usage Example
 
@@ -402,10 +448,29 @@ int main()
 }
 ```
 
+## Limitations
+
+### No offset-free formulation exists
+
+The controller takes the state it is given and predicts with the nominal `(A, B)`. The MPC code has no disturbance model, no augmented disturbance state and no coupling to an estimator, so a constant disturbance or a model mismatch leaves a steady-state offset. Regulating `x+ = x + u` at `horizon = 20` with the default weights while the plant adds a constant `0.1` per step settles at `x = 0.162`, not 0. An offset-free scheme needs the caller's own disturbance estimate folded into `x0` or the reference.
+
+### Tracking has no steady-state input target
+
+The tracking overloads penalize the input about `u = 0` and compute no `(x_ss, u_ss)` with `C x_ss = y_ref`, so a reference whose equilibrium needs a nonzero input settles short of it, by an amount that grows with `R` relative to `Q`. On `x+ = 0.9 x + 0.1 u`, `C = 1`, `horizon = 20` and the default weights, tracking `y_ref = 1` settles at `y = 0.489`. The double integrator's equilibria need `u = 0`, so it tracks without this offset.
+
+### The softened state bounds are not an exact penalty
+
+The default softening is a quadratic penalty on a free slack, which violates an active bound by about the multiplier over the weight even when the hard problem is feasible; see [Soft state constraints](#soft-state-constraints). Only `hard_state_constraints = true` poses the bounds as hard constraints, which then hold to the solver's tolerance.
+
+### Each terminal-set function computes a different set
+
+`compute_output_admissible_set` builds the maximal output admissible set of a given closed loop, and `terminal_ingredients` fills its `invariant_set` field with that set for `A + B K` only when `NX <= 4`; for larger `NX` the field holds `dimension_unsupported`. `compute_polytopic_invariant_set` builds a robust control-invariant set (every input in the input polytope keeps the state inside), not the LQR law's invariant set, and also requires `NX <= 4`. The ellipsoid in `set` is encoded as an inscribed box that is not invariant under the LQR law. Only the maximal output admissible set, posed hard with hard state constraints, carries the recursive-feasibility argument; see [the terminal constraint set](../../background/mpc.md#terminal-constraint-set-mathcalx_f).
+
 ## See Also
 
 - [nmpc](nmpc.md)<br/> nonlinear MPC
 - [osqp-solver](osqp-solver.md)<br/> OSQP QP solver backend
+- [argmin-qp-solver](argmin-qp-solver.md)<br/> header-only argmin QP backend
 - [mhe](mhe.md)<br/> linear moving horizon estimation
 - [guides/mpc/solver-injection](../../guides/mpc/solver-injection.md)<br/> solver injection guide
 - [guides/intro/your-first-mpc](../../guides/intro/your-first-mpc.md)<br/> introductory MPC tutorial
