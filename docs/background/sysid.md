@@ -4,7 +4,7 @@ System identification builds mathematical models of dynamic systems from
 measured input-output data. The goal is to find a model that accurately
 predicts the system's behavior, suitable for control design (LQR, MPC) or
 state estimation (Kalman filter, MHE)
-[1, Ch. 1, pp. 1--18].
+[1, Ch. 1, pp. 1--17].
 
 System identification is essential when first-principles models are
 unavailable, too complex, or insufficiently accurate. It provides a
@@ -32,7 +32,7 @@ model order (how many parameters) must be chosen by the user.
 ## ARX Models
 
 The AutoRegressive with eXogenous input (ARX) model relates the current output
-to past outputs and inputs [1, Ch. 4, pp. 83--108]:
+to past outputs and inputs [1, Sec. 4.2, pp. 81--82]:
 
 $$
 y(t) = a_1 y(t-1) + \cdots + a_{n_a} y(t-n_a) + b_1 u(t-1) + \cdots + b_{n_b} u(t-n_b) + e(t)
@@ -41,7 +41,7 @@ $$
 In compact regression form with parameter vector
 $\theta = [a_1, \ldots, a_{n_a}, b_1, \ldots, b_{n_b}]^\top$ and regressor
 $\varphi(t) = [y(t-1), \ldots, y(t-n_a), u(t-1), \ldots, u(t-n_b)]^\top$
-[1, eq. (4.2), p. 86]:
+[1, eqs. (4.11)--(4.12), p. 82]:
 
 $$
 y(t) = \varphi(t)^\top \theta + e(t)
@@ -56,7 +56,7 @@ the coefficients `batch_arx` and `recursive_arx` return.
 ARX is linear-in-parameters: the unknown coefficients can be estimated by
 ordinary least squares. The model orders $n_a$ (output) and $n_b$ (input)
 are selected by the user, typically using cross-validation or information
-criteria (AIC, BIC) [1, Ch. 16, pp. 487--514].
+criteria (AIC, BIC) [1, Sec. 16.4, pp. 500--507].
 
 ## Batch Least Squares
 
@@ -104,16 +104,16 @@ $$
 
 The forgetting factor $\lambda \in (0, 1]$ discounts old data, allowing the
 estimator to track slowly varying parameters
-[1, Sec. 11.3, pp. 371--376]:
+[1, Sec. 11.2, eq. (11.26), p. 368]:
 
 - $\lambda = 1$: all data weighted equally (standard least squares)
 - $\lambda < 1$: exponential discounting of old data
-- Typical values: $\lambda = 0.95$--$0.99$
+- Typical values: $\lambda = 0.98$--$0.995$ [1, Sec. 11.6, p. 379]
 
 Smaller $\lambda$ increases sensitivity to recent data but reduces estimation
 precision and can cause covariance blow-up. Bounding the covariance matrix $P$
 (e.g., resetting when its trace exceeds a threshold) prevents numerical
-instability [1, Sec. 11.3, p. 374]. ctrlpp bounds it by rescaling, not
+instability [1, Sec. 11.7, pp. 383--384]. ctrlpp bounds it by rescaling, not
 resetting: when the trace of $P_t$ exceeds $n_p$ times `cov_upper_bound`, with
 $n_p$ the parameter count, $P_t$ is scaled down to that trace.
 
@@ -182,7 +182,7 @@ This state-space form can be directly used with Kalman filters, LQR, and MPC.
 ## Model Validation
 
 Fit metrics quantify how well the identified model matches held-out data
-[1, Ch. 16, pp. 492--498]. The metrics `batch_arx` and `moesp` return score
+[1, Sec. 16.4, p. 500]. The metrics `batch_arx` and `moesp` return score
 the model simulated over the identification record itself;
 `compute_fit_metrics` scores a prediction of any other record.
 
