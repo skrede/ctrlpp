@@ -10,8 +10,10 @@
 
 int main()
 {
-    // Both controllers get large adaptation gains: the L1 transient stays bounded by the filter bandwidth,
-    // while the MRAC transient grows with the gain.
+    // Neither discrete update tolerates an arbitrarily large gain: the L1 gain must keep gamma * B^2 below
+    // 2 * (1 + A_m), 380 here, and MRAC diverges on this plant from a gain of about 21 at this reference, a ceiling
+    // that falls with the square of the reference amplitude. Within those limits the L1 filter sets its command,
+    // which barely changes with gamma, while the peak of the MRAC command grows with its gains.
     ctrlpp::discrete_state_space<double, 1, 1, 1> model{};
     model.A(0, 0) = 0.9;
     model.B(0, 0) = 0.1;
@@ -20,12 +22,12 @@ int main()
 
     ctrlpp::l1_config<double, 1, 1> l1_cfg{};
     l1_cfg.predictor_model = model;
-    l1_cfg.gamma(0, 0) = 5000.0;
+    l1_cfg.gamma(0, 0) = 150.0;
     l1_cfg.theta_min[0] = -10.0;
     l1_cfg.theta_max[0] = 10.0;
 
-    // A second-order Butterworth low-pass at 5 Hz for a 100 Hz sample rate.
-    auto l1_result = ctrlpp::l1_controller<double>::create(l1_cfg, 5.0, 100.0);
+    // A second-order Butterworth low-pass at 2 Hz for a 100 Hz sample rate.
+    auto l1_result = ctrlpp::l1_controller<double>::create(l1_cfg, 2.0, 100.0);
     if(!l1_result.has_value())
     {
         std::cerr << "invalid L1 configuration\n";

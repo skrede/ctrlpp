@@ -216,7 +216,9 @@ update $\hat{\sigma} \leftarrow \hat{\sigma} - \Gamma B^\top \tilde{x}$ on the
 prediction error $\tilde{x} = \hat{x} - x$, clamped elementwise to configured
 bounds, and the filtered command $u = C(z)(K_r r - \hat{\sigma})$. It does not
 check the stability condition above, and its update fixes the Lyapunov weight to
-the identity; the [l1 reference](../api/control/l1.md#limitations) states both.
+the identity. Unlike the continuous-time law, this discrete gradient update is not
+arbitrarily fast: it diverges once $\Gamma$ passes a ceiling set by $A_m$ and $B$.
+The [l1 reference](../api/control/l1.md#limitations) states all three.
 
 ## References
 
