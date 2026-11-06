@@ -1,8 +1,10 @@
 # nmpc
 
-> **Requires NLopt.** Enable with `-DCTRLPP_BUILD_NLOPT=ON` when configuring CMake.
+> **Requires a solver backend.** The controllers themselves need only Eigen. The shipped NLP backends are
+> [argmin_solver](argmin-solver.md) (`-DCTRLPP_BUILD_ARGMIN=ON`), which serves both classes, and
+> [nlopt_solver](nlopt-solver.md) (`-DCTRLPP_BUILD_NLOPT=ON`), which serves only `nmpc_dynamic`.
 
-Nonlinear Model Predictive Controller using NLP optimization with multiple shooting. Supports arbitrary nonlinear dynamics via the `dynamics_model` concept, custom stage and terminal cost overrides, nonlinear path and terminal constraints with optional soft relaxation, and automatic warm-starting via trajectory shifting.
+Nonlinear Model Predictive Controller using NLP optimization with direct multiple shooting. Supports arbitrary discrete-time nonlinear dynamics via the `dynamics_model` concept, custom stage and terminal cost overrides, nonlinear path and terminal constraints with optional L1-penalized slack, and a warm start shifted from the previous solution.
 
 ## Header and Alias
 
@@ -13,12 +15,19 @@ on the static path, in steady state and at an exact equilibrium; the default
 `nmpc` row of the [RT-safety matrix](../../rt-safety-matrix.md) states the
 measured coverage.
 `nmpc_dynamic` is the **runtime-horizon** controller (horizon taken from
-`nmpc_config::horizon`), the opt-in soft-RT path this NLopt example uses.
+`nmpc_config::horizon`), the opt-in soft-RT path, and the one the NLopt usage
+example below uses.
 
 | Form | Header |
 |------|--------|
 | `nmpc<Scalar, NX, NU, NH, Solver, Dynamics, NC, NTC>` (default, compile-time horizon) | `#include <ctrlpp/nmpc.h>` |
 | `nmpc_dynamic<Scalar, NX, NU, Solver, Dynamics, NC, NTC>` (opt-in, runtime horizon) | `#include <ctrlpp/nmpc.h>` |
+| `nmpc_config<Scalar, NX, NU, NC, NTC>` | `#include <ctrlpp/mpc/nmpc_config.h>` |
+| `nlp_problem`, `nlp_problem_static`, `nlp_update`, `nlp_result`, the `nlp_solver` and `nlp_stepper` concepts, `nmpc_construction_error` | `#include <ctrlpp/mpc/nlp_solver.h>` |
+| `nlp_formulation_error`, `nlp_stop_criterion`, `nlopt_setup_error`, `argmin_setup_error` | `#include <ctrlpp/mpc/nlp_types.h>` |
+| `nmpc_formulation_state` and the problem builders | `#include <ctrlpp/mpc/nlp_formulation.h>` |
+
+`<ctrlpp/nmpc.h>` includes every header in the table; it includes no solver backend.
 
 ```cpp
 // Default: compile-time horizon NH, allocation-free on the static path in steady state
@@ -41,13 +50,21 @@ class nmpc_dynamic;
 
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
-| `Scalar` | floating-point | Numeric type (`double`, `float`) |
+| `Scalar` | floating-point | Numeric type; `nlopt_solver` accepts `double` only |
 | `NX` | `>= 1` | State dimension |
 | `NU` | `>= 1` | Input dimension |
-| `Solver` | satisfies `nlp_solver` | NLP solver backend. See [nlopt-solver](nlopt-solver.md). |
+| `NH` | `> 0`, `nmpc` only | Compile-time horizon |
+| `Solver` | see below | NLP solver backend |
 | `Dynamics` | satisfies `dynamics_model<Scalar, NX, NU>` | Discrete-time dynamics callable. See [dynamics-model](../model/dynamics-model.md). |
 | `NC` | `>= 0` | Number of path constraints (default 0) |
 | `NTC` | `>= 0` | Number of terminal constraints (default 0) |
+
+`nmpc_dynamic` requires `Solver` to satisfy `nlp_solver` (`<ctrlpp/mpc/nlp_solver.h>`): it sets the solver up against an
+`nlp_problem<Scalar>` and calls `solve`. `nmpc` places no concept on `Solver`, but sets it up against
+`nlp_problem_static<Scalar, NV>` with `NV = (NH + 1) * NX + NH * NU`, and calls `solve_into` when the solver has one,
+`solve` otherwise. Of the shipped backends only an `argmin_solver` built with that `NV` fits `nmpc`; `nlopt_solver` and an
+`argmin_solver` with a runtime dimension fail to compile there. See [argmin_solver](argmin-solver.md) and
+[nlopt_solver](nlopt-solver.md).
 
 ## nmpc_config
 
@@ -58,19 +75,53 @@ Configuration struct `nmpc_config<Scalar, NX, NU, NC, NTC>` passed at constructi
 | `horizon` | `std::int32_t` | `1` | Prediction horizon length N |
 | `Q` | `Matrix<Scalar, NX, NX>` | Identity | State cost weight |
 | `R` | `Matrix<Scalar, NU, NU>` | Identity | Input cost weight |
-| `Qf` | `optional<Matrix<Scalar, NX, NX>>` | none | Terminal cost weight |
+| `Qf` | `optional<Matrix<Scalar, NX, NX>>` | none | Terminal cost weight; unset, the terminal cost uses `Q` |
 | `u_min` | `optional<Vector<Scalar, NU>>` | none | Element-wise lower input bound |
 | `u_max` | `optional<Vector<Scalar, NU>>` | none | Element-wise upper input bound |
-| `x_min` | `optional<Vector<Scalar, NX>>` | none | Element-wise lower state bound |
-| `x_max` | `optional<Vector<Scalar, NX>>` | none | Element-wise upper state bound |
-| `du_max` | `optional<Vector<Scalar, NU>>` | none | Maximum input rate of change per step |
+| `x_min` | `optional<Vector<Scalar, NX>>` | none | Element-wise lower state bound on stages 1 to N |
+| `x_max` | `optional<Vector<Scalar, NX>>` | none | Element-wise upper state bound on stages 1 to N |
+| `du_max` | `optional<Vector<Scalar, NU>>` | none | Symmetric bound on the input change per step, `abs(u_k - u_{k-1}) <= du_max` |
 | `stage_cost_cb` | `optional<function<Scalar(x, u)>>` | none | Custom stage cost override (replaces Q/R quadratic) |
 | `terminal_cost_cb` | `optional<function<Scalar(x)>>` | none | Custom terminal cost override (replaces Qf quadratic) |
 | `path_constraint_cb` | `optional<function<Vector<NC>(x, u)>>` | none | Path constraint g(x,u) <= 0 element-wise |
 | `terminal_constraint_cb` | `optional<function<Vector<NTC>(x)>>` | none | Terminal constraint h(x_N) <= 0 element-wise |
-| `soft_constraints` | `bool` | `true` | Soften constraints with slack variables |
+| `soft_constraints` | `bool` | `true` | Soften the path and terminal constraints with slack variables |
 | `path_penalty` | `Vector<Scalar, NC>` | `1e4` each | Per-constraint L1 penalty for path constraints |
 | `terminal_penalty` | `Vector<Scalar, NTC>` | `1e4` each | Per-constraint L1 penalty for terminal constraints |
+
+## Formulation
+
+`<ctrlpp/mpc/nlp_formulation.h>` poses the NLP the backends solve; `detail::build_nmpc_problem` builds the runtime-sized
+`nlp_problem` and `detail::build_nmpc_problem_static` the `nlp_problem_static` of the compile-time-horizon class. The
+formulation reads the initial state, the references and the previous input from an `nmpc_formulation_state` the
+controller updates before each solve.
+
+The decision vector is `[x_0 ... x_N, u_0 ... u_{N-1}, s_0 ... s_{N-1}, s_N]`, the path slacks `s_k` (`NC` each) and the
+terminal slack `s_N` (`NTC`) present only for an active soft constraint. The constraint rows are, in order: the initial
+state `x_0 - x0 = 0`; the continuity rows `x_{k+1} - f(x_k, u_k) = 0`; with `du_max`, two rows per input and stage,
+`u_k - u_{k-1} - du_max <= 0` and `-(u_k - u_{k-1}) - du_max <= 0`, where `u_{-1}` is the previous input; the path
+rows `g(x_k, u_k) - s_k <= 0`; the terminal rows `h(x_N) - s_N <= 0`. The slack terms drop out when the constraint is
+hard. `u_min` and `u_max` bound every input, `x_min` and `x_max` bound the states of stages 1 to N (the initial state is
+pinned by its equality alone, so a measured state on or past a bound stays solvable), and every slack is bounded below by
+zero.
+
+With neither callback set, the cost is
+
+```
+sum_{k=0}^{N-1} [ 1/2 (x_k - r_k)^T Q (x_k - r_k) + 1/2 u_k^T R u_k ] + 1/2 (x_N - r_N)^T Qf (x_N - r_N)
+    + sum_k path_penalty^T s_k + terminal_penalty^T s_N
+```
+
+with `Qf = Q` when `Qf` is unset; the input is penalized about zero, not about a steady-state input. `stage_cost_cb`
+replaces the bracketed stage term and `terminal_cost_cb` the terminal quadratic. The cost gradient is analytic for the
+quadratic cost; once either callback is set, the whole gradient is taken by finite differences of the cost. The
+constraint Jacobian (`constraint_jacobian_cb`, written column-major) is taken by central differences of the whole
+constraint vector with the step `cbrt(eps) * max(1, |z_j|)`, and its structural entries (the identity and slack
+columns, the rate rows' `+-1`) are then overwritten exactly. `argmin_solver` reads it; `nlopt_solver` ignores it and
+differentiates the rows itself.
+
+The nonlinear controllers do not use `<ctrlpp/mpc/terminal_cost.h>`, which holds the linear `mpc`'s Riccati terminal
+cost: no nonlinear terminal cost is computed for the caller.
 
 ## Construction
 
@@ -188,8 +239,9 @@ Two alternatives are deliberately not implemented. Validating at the first solve
 
 ## Failure contract
 
-`nmpc` shares the exact soft-constraint and failure contract documented for
-[mpc](mpc.md). Every `solve` overload returns
+`nmpc` shares the failure contract documented for [mpc](mpc.md); its
+softening differs (a linear penalty on non-negative slacks of the path and terminal constraints,
+where `mpc` puts a quadratic penalty on its state bounds). Every `solve` overload returns
 `ctrlpp::expected<solve_output<Scalar, NU>, solver_error>`:
 
 - The **success branch** holds a `solve_output` whose `input` field is the first
@@ -210,13 +262,16 @@ solver's own storage, and no NaN or infinity becomes a command. The
 runtime-horizon controller compares the length against the dimension it derived
 at construction from its horizon and its state, input, path-slack and
 terminal-slack contributions; the compile-time-horizon controller compares it
-against `NV`. A longer-than-required result is accepted, and only its first `NV`
-entries are consumed.
+against `NV`. A longer-than-required result is accepted. The compile-time-horizon
+controller consumes only its first `NV` entries; the runtime-horizon controller
+stores it whole, so `last_solution()` and the next warm start carry the extra
+entries.
 
 Nothing from a refused result is committed. The warm start of the next solve, the
 previous input the rate constraints are posed against, `last_solution()` and
 `trajectory()` all keep the last accepted solve, and `diagnostics().status` reads
-`solve_status::invalid_backend_result`. On the compile-time-horizon controller, a
+`solve_status::invalid_backend_result`. The diagnostics are the one exception:
+they always describe the latest solve, refused or not. On the compile-time-horizon controller, a
 solver that writes into a caller buffer writes into a second, pre-sized candidate
 buffer, and the controller exchanges the two buffers only when the result is
 accepted, so the commit allocates nothing; a solver that returns its decision
@@ -251,18 +306,19 @@ ctrlpp::expected<solve_output<Scalar, NU>, solver_error>
 solve(const Vector<Scalar, NX>& x0, const Vector<Scalar, NX>& x_ref);
 ```
 
-Solves the NLP for tracking a constant reference.
+Solves the NLP for tracking a constant reference: every stage, the terminal one included, is weighted against `x_ref`.
 
-### solve (trajectory reference)
+### solve (trajectory reference, `nmpc_dynamic` only)
 
 ```cpp
 ctrlpp::expected<solve_output<Scalar, NU>, solver_error>
 solve(const Vector<Scalar, NX>& x0, std::span<const Vector<Scalar, NX>> x_ref);
 ```
 
-Solves the NLP for tracking a time-varying reference trajectory. References shorter
-than the horizon are back-filled from the last supplied element; an empty span is
-rejected via the error branch (`solver_error::invalid_problem`).
+Solves the NLP for tracking a time-varying reference trajectory. Element `k` weights
+stage `k`, for `k = 0` to `N`; a span shorter than `N + 1` is back-filled from its
+last element and a longer one is truncated. An empty span is rejected via the error
+branch (`solver_error::invalid_problem`).
 
 ### set_applied_input
 
@@ -270,11 +326,12 @@ rejected via the error branch (`solver_error::invalid_problem`).
 void set_applied_input(const Vector<Scalar, NU>& u);
 ```
 
-Records the control input the caller actually commanded. The internal previous
-input is updated only on a successful solve; this accessor keeps that reference
-consistent when the caller commands a different input.
+Records the control input the caller actually commanded. The previous input, which
+the first rate rows are posed against, starts at zero and is otherwise updated only
+by an accepted solve; this accessor keeps it consistent when the caller commands a
+different input.
 
-### trajectory
+### trajectory (`nmpc_dynamic` only)
 
 ```cpp
 ctrlpp::expected<std::pair<std::vector<Vector<Scalar, NX>>,
@@ -292,7 +349,20 @@ guarded: before the first valid solve it returns the error branch
 mpc_diagnostics<Scalar> diagnostics() const;
 ```
 
-Returns solver diagnostics including constraint violation metrics and total slack.
+Returns the diagnostics of the latest solve:
+
+| Field | Value |
+|-------|-------|
+| `status` | the backend's `solve_status`, or `invalid_backend_result` for a result the controller refused |
+| `iterations`, `solve_time`, `cost` | the backend's iteration count, time and objective, as the backend reports them |
+| `primal_residual`, `max_constraint_violation` | both the backend's constraint violation |
+| `dual_residual` | always `0` |
+| `max_path_constraint_violation` | `nmpc_dynamic`: the largest `g(x_k, u_k)` entry over the accepted primal, floored at `0`; `nmpc`: always `0` |
+| `max_terminal_constraint_violation` | `nmpc_dynamic`: the largest `h(x_N)` entry, floored at `0`; `nmpc`: always `0` |
+| `total_slack` | `nmpc_dynamic`: the sum of the slack entries of the accepted primal; `nmpc`, which poses no slack: `0` |
+| `stop_criterion` | below |
+
+The three constraint fields of `nmpc_dynamic` are computed only for an accepted result.
 
 `stop_criterion` says which stopping test ended the last solve, for backends that report it (`argmin_solver` does; the others leave it `unreported`). `status` folds every successful stop into `solve_status::optimal`, which is enough for acting on the answer but not for saying how close the answer is to the exact optimum. Only a stop on `nlp_stop_criterion::stationarity` means the first-order optimality residual fell below its threshold, and a bound on the distance to the optimum can be built from that. A stop on the change in the objective (`objective_change`) or in the iterate (`step_size`) certifies no such distance.
 
@@ -304,65 +374,32 @@ Returns solver diagnostics including constraint violation metrics and total slac
 | `step_size` | the relative change in the iterate fell below `xtol_rel` |
 | `stalled` | the iterate or the objective stopped making progress, including a line search that accepted no step |
 | `iteration_limit` | `max_eval` ran out |
-| `time_limit` | `max_time` ran out (only under the wall-clock budget, below) |
+| `time_limit` | `max_time` ran out (only under argmin's wall-clock budget) |
 | `other` | any other stop, including a failed solve |
 
-### argmin backend settings
+### argmin backend
 
-`argmin_solver` takes its `settings_type`. Under the default budget, `argmin_step_budget`, that is `argmin_settings<Scalar>`:
+[argmin_solver](argmin-solver.md) documents the backend's policies, settings, budgets and setup refusals.
+The points below are specific to the NMPC transcription.
 
-| Field | Default | Meaning |
-|-------|---------|---------|
-| `ftol_rel` | `1e-6` | relative objective-change threshold |
-| `xtol_rel` | `1e-6` | relative step threshold |
-| `max_eval` | `500` | iteration cap |
-| `constraint_tol` | `1e-8` | constraint and feasibility tolerance |
-| `warm_start` | `curvature` | what a re-solve keeps from the previous one |
-| `kkt_tol` | `1e-5` | threshold on the composite KKT residual, the largest of the stationarity and feasibility legs in the infinity norm |
-
-The third template parameter, `Constrained` (default `true`), selects the bridge. With `false` the bridge handles
-variable bounds only, and its `setup` refuses a problem with general constraint rows with
-`argmin_setup_error::constraints_unsupported` instead of solving it without them. The transcription always poses the
-dynamics as equality rows, so `Constrained = false` cannot back an NMPC: `create` refuses it with the
-`argmin_setup_error` alternative holding `constraints_unsupported`. Controllers use the default.
+The transcription always poses the dynamics as equality rows, so an `argmin_solver` built with `Constrained = false`
+cannot back an NMPC: `create` refuses it with the `argmin_setup_error` alternative holding `constraints_unsupported`.
 
 ### argmin setup refusals
 
-`argmin_solver`'s `setup` refuses a problem its bridge cannot hold and leaves the solver as it was. It checks in
-this order and reports the first refusal:
+For a fixed constraint cap `MaxM`, the partitioned row count is the equality rows plus one per finite inequality side.
+With horizon `N`, the transcription poses `NX * (N + 1)` initial-state and continuity equalities, so
+`MaxM = NX * (NH + 1)` covers a controller with no other rows. Every other row has one finite side: a rate limit
+(`du_max`) adds `2 * NU` rows per stage, a path constraint adds `NC` per stage, and a terminal constraint adds `NTC`, so
+`2 * NU * N`, `NC * N` and `NTC` in total. Bounds on the decision variables do not count. An undersized `MaxM` is
+refused at construction: `create` returns the `argmin_setup_error` alternative holding `constraint_cap_exceeded`.
 
-| Refusal | The problem |
-|---------|-------------|
-| `constraints_unsupported` | poses general constraint rows on the bridge built with `Constrained = false` |
-| `dimension_mismatch` | declares an `n_vars` other than the fixed decision dimension `NV` |
-| `constraint_cap_exceeded` | poses more partitioned rows than the fixed cap `MaxM` |
-| `equality_rows_exceed_dimension` | poses more equality rows than decision variables, which argmin's active-set QP cannot take |
+### argmin stopping tolerance
 
-The partitioned row count is the equality rows plus one per finite inequality side, so a two-sided row counts twice.
-Bounds on the decision variables do not count. With horizon `N`, the transcription poses `NX * (N + 1)` dynamics
-equalities, so `MaxM = NX * (NH + 1)` covers a controller with no other rows. Every other row has one finite side: a
-rate limit (`du_max`) adds `2 * NU` rows per stage, a path constraint adds `NC` per stage, and a terminal constraint
-adds `NTC`, so `2 * NU * N`, `NC * N` and `NTC` in total. An undersized `MaxM` is refused at construction: `create`
-returns the `argmin_setup_error` alternative holding `constraint_cap_exceeded`.
-
-The budget is the sixth template parameter, and it is chosen at compile time. The default instantiates only the
-step-budget driver, so the solver reads no clock, and its settings have no `max_time`: setting one is a compile
-error, not a value the solver ignores. A wall-clock budget is opt-in:
-
-```cpp
-using timed = ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp, true, Eigen::Dynamic, Eigen::Dynamic,
-                                    ctrlpp::argmin_step_and_time_budget>;
-
-timed::settings_type settings;  // argmin_timed_settings<double>: every field above, plus max_time
-settings.max_time = 0.5;        // seconds; the default 0 runs the step-budget driver
-```
-
-This differs from `nlopt_solver`, whose `nlopt_settings::max_time` is a run-time field on every instance. The two
-backends' settings otherwise carry the same tolerance and cap fields, but an argmin solver has a `max_time` to set
-only when it is built with `argmin_step_and_time_budget`. A wall-clock budget is not real-time safe (see the
-[RT-safety matrix](../../rt-safety-matrix.md)).
-
-`kkt_tol` is absolute, not relative to the problem's scale. Its default is the backend's own, the `pgtol` default of Byrd, Lu, Nocedal and Zhu (1995), so leaving it unset changes nothing. On a problem whose state shrinks toward zero, an absolute threshold stops each solve once the residual is small in absolute terms. The input it returns is then accurate to an absolute amount, not a relative one. A caller who needs relative accuracy at small states tightens `kkt_tol`, and pays for it in iterations:
+`kkt_tol` is absolute, not relative to the problem's scale. On a problem whose state shrinks toward zero, an absolute
+threshold stops each solve once the residual is small in absolute terms, and the input it returns is then accurate to
+an absolute amount, not a relative one. A caller who needs relative accuracy at small states tightens `kkt_tol`, and
+pays for it in iterations:
 
 ```cpp
 using solver = ctrlpp::argmin_solver<double, ctrlpp::argmin_nw_sqp, true, NV, MaxM>;
@@ -383,6 +420,7 @@ if(u && controller->diagnostics().stop_criterion == ctrlpp::nlp_stop_criterion::
 
 ## Usage Example
 
+<!-- snippet: exceptions -->
 ```cpp
 // gnuplot: plot "< ./nmpc_pendulum" using 1:2 with lines title "theta"
 #include <ctrlpp/nmpc.h>
@@ -460,11 +498,40 @@ int main()
 }
 ```
 
+## Limitations
+
+### No offset-free formulation exists
+
+The controllers carry no disturbance model, no disturbance or bias estimate and no coupling to an estimator, so a
+constant disturbance the model does not contain leaves a steady-state offset. Measured on `x+ = x + u` with an
+unmodeled `+0.1` added every step, regulated with `nmpc` (horizon 20, default weights, `argmin_nw_sqp`): the state
+settles at `0.162`, not `0`.
+
+### Tracking has no steady-state input target
+
+`solve(x0, x_ref)` weights the states against the reference and the inputs against zero; no steady-state input is
+computed for the reference. A reference that needs a nonzero input to hold settles short of it. Measured on
+`x+ = 0.9 x + 0.1 u` tracking `x_ref = 1` (horizon 20, default weights): the state settles at `0.479`.
+
+### State and input bounds are never softened
+
+`soft_constraints` softens only the path and terminal constraint callbacks. `u_min`, `u_max`, `x_min`, `x_max` and
+`du_max` stay hard, so a state bound the dynamics cannot meet from the current state makes the problem infeasible,
+however `soft_constraints` is set.
+
+### The two backends' augmented-Lagrangian options are not interchangeable
+
+`nlopt_algorithm::auglag_mma` and `auglag_ccsaq` run NLopt's `AUGLAG_EQ`, which penalizes only the equality rows and
+passes the inequality rows to the inner solver. `argmin_auglag`, with its default inner solver `argmin_lbfgsb`, folds the
+equality and the inequality rows into its augmented objective and passes only the variable bounds on. See
+[nlopt_solver](nlopt-solver.md) and [argmin_solver](argmin-solver.md).
+
 ## See Also
 
 - [mpc](mpc.md)<br/> linear MPC
+- [argmin-solver](argmin-solver.md)<br/> header-only argmin NLP solver backend
 - [nlopt-solver](nlopt-solver.md)<br/> NLopt NLP solver backend
 - [dynamics-model](../model/dynamics-model.md)<br/> dynamics model concept
 - [constraint-model](../model/constraint-model.md)<br/> constraint model concepts
 - [guides/mpc/solver-injection](../../guides/mpc/solver-injection.md)<br/> solver injection guide
-- [background/mpc](../../background/mpc.md)<br/> MPC theory and background
+- [background/nmpc](../../background/nmpc.md)<br/> NMPC theory and background

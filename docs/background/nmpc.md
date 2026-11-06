@@ -38,10 +38,15 @@ $$
 
 where:
 
-- $\ell(x, u)$ is the stage cost (often quadratic: $(x - x_r)^\top Q (x - x_r) + u^\top R u$)
-- $V_f(x_N)$ is the terminal cost
+- $\ell(x, u)$ is the stage cost; ctrlpp's default is $\tfrac{1}{2}(x - x_r)^\top Q (x - x_r) + \tfrac{1}{2} u^\top R u$,
+  with the input penalized about zero
+- $V_f(x_N)$ is the terminal cost; ctrlpp's default is $\tfrac{1}{2}(x_N - x_r)^\top Q_f (x_N - x_r)$, with
+  $Q_f = Q$ unless set
 - $g(x, u) \le 0$ are path constraints (actuator limits, safety bounds)
 - $h(x_N) \le 0$ are terminal constraints
+
+ctrlpp's `nmpc` adds box bounds on the inputs and on the states of stages 1 to $N$, and an
+optional symmetric bound on the input change per step.
 
 ## Direct Multiple Shooting
 
@@ -59,7 +64,8 @@ $$
 
 Both the states $x_0, \ldots, x_N$ and inputs $u_0, \ldots, u_{N-1}$ are
 decision variables. Continuity between intervals is enforced by equality
-constraints [2, Sec. 3.1, pp. 396--398]:
+constraints [2, Sec. 3.1, pp. 396--398]. ctrlpp takes $F$ to be the caller's
+discrete-time dynamics callable itself, so any integration happens inside it:
 
 $$
 x_{i+1} - F(x_i, u_i) = 0, \quad i = 0, \ldots, N-1
@@ -69,12 +75,12 @@ $$
 
 - **Robustness**: each shooting segment can be integrated independently,
   avoiding the numerical sensitivity of single shooting
-- **Parallelism**: segment integrations are independent and can be
-  parallelized
+- **Parallelism**: segment integrations are independent and could be run in
+  parallel; ctrlpp evaluates them in sequence
 - **Structure**: the NLP has a sparse, banded Jacobian that specialized
-  solvers can exploit
-- **Warm-starting**: the previous solution provides an excellent initial
-  guess for the next time step by shifting the trajectory forward
+  solvers can exploit; ctrlpp's backends treat it as dense
+- **Warm-starting**: the previous solution, shifted forward one stage, is the
+  initial guess for the next time step, as ctrlpp's `nmpc` does
 
 ## NLP Solution Methods
 
@@ -110,25 +116,38 @@ control time step, using the warm-started solution from the previous step
 RTI converges over multiple control steps rather than within a single step,
 achieving near-optimal performance with bounded computation time.
 
+ctrlpp's `nmpc` does not implement RTI. Each control step runs the backend to
+its own stopping criteria, from the shifted warm start; a small iteration cap
+(`max_eval`) bounds the work per step but does not split it into preparation
+and feedback phases.
+
 ## Constraint Handling
 
 ### Path Constraints
 
 General nonlinear path constraints $g(x_i, u_i) \le 0$ enter the NLP
 directly. The NLP solver handles them via active-set or interior-point methods
-[1, Sec. 12.4, pp. 237--240].
+[1, Sec. 12.4, pp. 237--240]. ctrlpp ships no interior-point backend: argmin's
+SQP policies solve active-set QP subproblems, and the other backends handle the
+rows by moving asymptotes, derivative-free models or an augmented Lagrangian.
 
 ### Soft Constraints
 
-As in linear MPC, infeasibility can occur when hard state constraints conflict
-with the dynamics. Soft constraints with L1 penalty relaxation prevent
-solver failure [1, Sec. 12.4, pp. 240--242]:
+As in linear MPC, infeasibility can occur when hard constraints conflict with
+the dynamics. Soft constraints with L1 penalty relaxation prevent solver
+failure [1, Sec. 12.4, pp. 240--242]:
 
 $$
 g(x_i, u_i) - \epsilon_i \le 0, \quad \epsilon_i \ge 0
 $$
 
 with additional cost $\rho \sum_i \epsilon_i$.
+
+ctrlpp softens the path and terminal constraints this way, with one
+non-negative slack per constraint and stage and a per-constraint weight
+$\rho$ (`path_penalty`, `terminal_penalty`); the state and input bounds stay
+hard. This differs from ctrlpp's linear `mpc`, which softens its state bounds
+with a quadratic penalty instead.
 
 ## Stability
 
@@ -142,7 +161,9 @@ stronger assumptions [3, Sec. 5, pp. 800--808]:
 3. **Continuity**: the stage cost and dynamics must be continuous
 
 When these conditions hold, the NMPC value function is a Lyapunov function
-and the closed loop is asymptotically stable.
+and the closed loop is asymptotically stable. ctrlpp computes no terminal
+ingredients for `nmpc`: the caller supplies the terminal cost (`Qf` or
+`terminal_cost_cb`) and the terminal constraint (`terminal_constraint_cb`).
 
 ## Comparison with Linear MPC
 
