@@ -20,12 +20,14 @@ int main()
 
     config cfg{};
     cfg.predictor_model = pred_model;
-    cfg.gamma(0, 0) = 1000.0;
+    // With the uncertainty held constant, the discrete adaptation loop is stable only for
+    // 0 < gamma * B^2 < 2 * (1 + A_m), which caps gamma at 380 here.
+    cfg.gamma(0, 0) = 150.0;
     cfg.theta_min[0] = -10.0;
     cfg.theta_max[0] = 10.0;
 
-    // A second-order Butterworth low-pass at 5 Hz for a 100 Hz sample rate.
-    auto ctrl_result = controller::create(cfg, 5.0, 100.0);
+    // A second-order Butterworth low-pass at 2 Hz for a 100 Hz sample rate.
+    auto ctrl_result = controller::create(cfg, 2.0, 100.0);
     if(!ctrl_result.has_value())
     {
         std::cerr << "invalid L1 configuration\n";
