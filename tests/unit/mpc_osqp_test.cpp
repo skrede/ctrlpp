@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <limits>
 #include <utility>
+#include <algorithm>
 #include <type_traits>
 
 namespace
@@ -71,22 +72,43 @@ void require_every_solve_converges(OsqpMpc& controller, const ctrlpp::discrete_s
 auto example_config() -> ctrlpp::mpc_config<double, NX, NU>
 {
     return {
-        .horizon = 20,
-        .Q = Eigen::Vector2d(10.0, 1.0).asDiagonal(),
-        .R = Eigen::Matrix<double, 1, 1>::Identity(),
-        .u_min = Eigen::Matrix<double, 1, 1>::Constant(-1.0),
-        .u_max = Eigen::Matrix<double, 1, 1>::Constant(1.0),
-        .x_min = Eigen::Vector2d(-inf, -2.0),
-        .x_max = Eigen::Vector2d(inf, 2.0),
+            .horizon = 20,
+            .Q = Eigen::Vector2d(10.0, 1.0).asDiagonal(),
+            .R = Eigen::Matrix<double, 1, 1>::Identity(),
+            .u_min = Eigen::Matrix<double, 1, 1>::Constant(-1.0),
+            .u_max = Eigen::Matrix<double, 1, 1>::Constant(1.0),
+            .x_min = Eigen::Vector2d(-inf, -2.0),
+            .x_max = Eigen::Vector2d(inf, 2.0),
     };
+}
+
+struct trajectory_violation
+{
+    double input_overshoot;
+    double equality_residual;
+};
+
+trajectory_violation violation_of(const OsqpMpc& controller, const ctrlpp::discrete_state_space<double, NX, NU, NX>& sys, const Eigen::Vector2d& x0, double u_bound)
+{
+    auto traj = controller.trajectory();
+    REQUIRE(traj.has_value());
+    auto& [states, inputs] = *traj;
+    trajectory_violation v{0.0, (states.front() - x0).lpNorm<Eigen::Infinity>()};
+    for(std::size_t k = 0; k < inputs.size(); ++k)
+    {
+        v.input_overshoot = std::max(v.input_overshoot, std::abs(inputs[k](0)) - u_bound);
+        v.equality_residual = std::max(v.equality_residual, (states[k + 1] - sys.A * states[k] - sys.B * inputs[k]).lpNorm<Eigen::Infinity>());
+    }
+    return v;
 }
 
 } // namespace
 
 TEST_CASE("osqp_solver setup reports setup failure as an expected error", "[mpc][osqp]")
 {
-    static_assert(std::is_same_v<decltype(std::declval<ctrlpp::osqp_solver&>().setup(std::declval<const ctrlpp::qp_problem<double>&>())), ctrlpp::expected<void, ctrlpp::osqp_setup_error>>,
-                  "setup must return ctrlpp::expected<void, osqp_setup_error>");
+    static_assert(
+            std::is_same_v<decltype(std::declval<ctrlpp::osqp_solver&>().setup(std::declval<const ctrlpp::qp_problem<double>&>())), ctrlpp::expected<void, ctrlpp::osqp_setup_error>>,
+            "setup must return ctrlpp::expected<void, osqp_setup_error>");
 
     auto problem = make_simple_qp();
 
@@ -157,9 +179,9 @@ TEST_CASE("mpc accepts a preset-injected solver", "[mpc][osqp]")
 {
     auto sys = make_double_integrator();
     ctrlpp::mpc_config<double, NX, NU> cfg{
-        .horizon = 10,
-        .Q = Eigen::Matrix2d::Identity(),
-        .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+            .horizon = 10,
+            .Q = Eigen::Matrix2d::Identity(),
+            .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
     };
 
     // Third constructor argument injects a pre-configured solver; qp_preset::speed
@@ -186,9 +208,9 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
     SECTION("regulation drives state toward origin")
     {
         ctrlpp::mpc_config<double, NX, NU> cfg{
-            .horizon = N,
-            .Q = Eigen::Matrix2d::Identity(),
-            .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+                .horizon = N,
+                .Q = Eigen::Matrix2d::Identity(),
+                .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
         };
 
         auto controller_result = OsqpMpc::create(sys, cfg);
@@ -220,9 +242,9 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
     SECTION("setpoint tracking converges to reference")
     {
         ctrlpp::mpc_config<double, NX, NU> cfg{
-            .horizon = N,
-            .Q = Eigen::Matrix2d::Identity(),
-            .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+                .horizon = N,
+                .Q = Eigen::Matrix2d::Identity(),
+                .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
         };
 
         auto controller_result = OsqpMpc::create(sys, cfg);
@@ -251,11 +273,11 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
     SECTION("input bounds are respected")
     {
         ctrlpp::mpc_config<double, NX, NU> cfg{
-            .horizon = N,
-            .Q = Eigen::Matrix2d::Identity(),
-            .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
-            .u_min = (Eigen::Matrix<double, 1, 1>() << -0.5).finished(),
-            .u_max = (Eigen::Matrix<double, 1, 1>() << 0.5).finished(),
+                .horizon = N,
+                .Q = Eigen::Matrix2d::Identity(),
+                .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+                .u_min = (Eigen::Matrix<double, 1, 1>() << -0.5).finished(),
+                .u_max = (Eigen::Matrix<double, 1, 1>() << 0.5).finished(),
         };
 
         auto controller_result = OsqpMpc::create(sys, cfg);
@@ -277,12 +299,12 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
     SECTION("soft state constraints allow feasible solution from outside bounds")
     {
         ctrlpp::mpc_config<double, NX, NU> cfg{
-            .horizon = N,
-            .Q = Eigen::Matrix2d::Identity(),
-            .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
-            .x_min = (Eigen::Vector2d() << -5.0, -5.0).finished(),
-            .x_max = (Eigen::Vector2d() << 5.0, 5.0).finished(),
-            .hard_state_constraints = false,
+                .horizon = N,
+                .Q = Eigen::Matrix2d::Identity(),
+                .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+                .x_min = (Eigen::Vector2d() << -5.0, -5.0).finished(),
+                .x_max = (Eigen::Vector2d() << 5.0, 5.0).finished(),
+                .hard_state_constraints = false,
         };
 
         Eigen::Vector2d x0{10.0, 0.0}; // outside state bounds
@@ -297,12 +319,12 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
     SECTION("hard state constraints make out-of-bounds initial state infeasible")
     {
         ctrlpp::mpc_config<double, NX, NU> cfg{
-            .horizon = N,
-            .Q = Eigen::Matrix2d::Identity(),
-            .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
-            .x_min = (Eigen::Vector2d() << -5.0, -5.0).finished(),
-            .x_max = (Eigen::Vector2d() << 5.0, 5.0).finished(),
-            .hard_state_constraints = true,
+                .horizon = N,
+                .Q = Eigen::Matrix2d::Identity(),
+                .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+                .x_min = (Eigen::Vector2d() << -5.0, -5.0).finished(),
+                .x_max = (Eigen::Vector2d() << 5.0, 5.0).finished(),
+                .hard_state_constraints = true,
         };
 
         Eigen::Vector2d x0{10.0, 0.0}; // violates hard state bounds
@@ -317,9 +339,9 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
     SECTION("warm-starting reduces iterations on second solve")
     {
         ctrlpp::mpc_config<double, NX, NU> cfg{
-            .horizon = N,
-            .Q = Eigen::Matrix2d::Identity(),
-            .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+                .horizon = N,
+                .Q = Eigen::Matrix2d::Identity(),
+                .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
         };
 
         auto controller_result = OsqpMpc::create(sys, cfg);
@@ -347,9 +369,9 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
     SECTION("diagnostics populated after successful solve")
     {
         ctrlpp::mpc_config<double, NX, NU> cfg{
-            .horizon = N,
-            .Q = Eigen::Matrix2d::Identity(),
-            .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+                .horizon = N,
+                .Q = Eigen::Matrix2d::Identity(),
+                .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
         };
 
         auto controller_result = OsqpMpc::create(sys, cfg);
@@ -369,9 +391,9 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
     SECTION("trajectory returns consistent states and inputs")
     {
         ctrlpp::mpc_config<double, NX, NU> cfg{
-            .horizon = N,
-            .Q = Eigen::Matrix2d::Identity(),
-            .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+                .horizon = N,
+                .Q = Eigen::Matrix2d::Identity(),
+                .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
         };
 
         auto controller_result = OsqpMpc::create(sys, cfg);
@@ -404,12 +426,12 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
     SECTION("rate constraints limit control change between solves")
     {
         ctrlpp::mpc_config<double, NX, NU> cfg{
-            .horizon = N,
-            .Q = Eigen::Matrix2d::Identity(),
-            .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
-            .u_min = (Eigen::Matrix<double, 1, 1>() << -5.0).finished(),
-            .u_max = (Eigen::Matrix<double, 1, 1>() << 5.0).finished(),
-            .du_max = (Eigen::Matrix<double, 1, 1>() << 0.2).finished(),
+                .horizon = N,
+                .Q = Eigen::Matrix2d::Identity(),
+                .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+                .u_min = (Eigen::Matrix<double, 1, 1>() << -5.0).finished(),
+                .u_max = (Eigen::Matrix<double, 1, 1>() << 5.0).finished(),
+                .du_max = (Eigen::Matrix<double, 1, 1>() << 0.2).finished(),
         };
 
         auto controller_result = OsqpMpc::create(sys, cfg);
@@ -435,10 +457,8 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
     SECTION("DARE default Qf solves without explicit Qf")
     {
         ctrlpp::mpc_config<double, NX, NU> cfg{
-            .horizon = N,
-            .Q = Eigen::Matrix2d::Identity(),
-            .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
-            // Qf not specified -- DARE should compute it internally
+                .horizon = N, .Q = Eigen::Matrix2d::Identity(), .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+                // Qf not specified -- DARE should compute it internally
         };
 
         auto controller_result = OsqpMpc::create(sys, cfg);
@@ -456,12 +476,12 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
     SECTION("set_applied_input re-anchors the rate constraint")
     {
         ctrlpp::mpc_config<double, NX, NU> cfg{
-            .horizon = N,
-            .Q = Eigen::Matrix2d::Identity(),
-            .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
-            .u_min = (Eigen::Matrix<double, 1, 1>() << -5.0).finished(),
-            .u_max = (Eigen::Matrix<double, 1, 1>() << 5.0).finished(),
-            .du_max = (Eigen::Matrix<double, 1, 1>() << 0.2).finished(),
+                .horizon = N,
+                .Q = Eigen::Matrix2d::Identity(),
+                .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+                .u_min = (Eigen::Matrix<double, 1, 1>() << -5.0).finished(),
+                .u_max = (Eigen::Matrix<double, 1, 1>() << 5.0).finished(),
+                .du_max = (Eigen::Matrix<double, 1, 1>() << 0.2).finished(),
         };
 
         auto controller_result = OsqpMpc::create(sys, cfg);
@@ -491,11 +511,11 @@ TEST_CASE("mpc on osqp_solver converges with an infinite bound side", "[mpc][osq
 {
     auto sys = make_double_integrator();
     ctrlpp::mpc_config<double, NX, NU> cfg{
-        .horizon = 10,
-        .Q = Eigen::Matrix2d::Identity(),
-        .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
-        .u_min = Eigen::Matrix<double, 1, 1>::Constant(-1.0),
-        .u_max = Eigen::Matrix<double, 1, 1>::Constant(1.0),
+            .horizon = 10,
+            .Q = Eigen::Matrix2d::Identity(),
+            .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+            .u_min = Eigen::Matrix<double, 1, 1>::Constant(-1.0),
+            .u_max = Eigen::Matrix<double, 1, 1>::Constant(1.0),
     };
 
     SECTION("a one-sided state bound")
@@ -543,9 +563,8 @@ TEST_CASE("osqp_solver solves a problem whose rows have an absent side", "[mpc][
 
 TEST_CASE("osqp_solver refuses an empty row and reports every refused update", "[mpc][osqp][infinity]")
 {
-    const auto make_update = [](const Eigen::Vector2d& l, const Eigen::Vector2d& u) {
-        return ctrlpp::qp_update<double>{.q = Eigen::Vector2d(1.0, -1.0), .l = l, .u = u, .warm_x = {}, .warm_y = {}};
-    };
+    const auto make_update = [](const Eigen::Vector2d& l, const Eigen::Vector2d& u)
+    { return ctrlpp::qp_update<double>{.q = Eigen::Vector2d(1.0, -1.0), .l = l, .u = u, .warm_x = {}, .warm_y = {}}; };
 
     SECTION("an impossible side is refused at setup")
     {
@@ -611,4 +630,54 @@ TEST_CASE("mpc on osqp_solver reports an infinite initial state instead of answe
     auto next = controller->solve(x);
     REQUIRE(next.has_value());
     CHECK(next->status == ctrlpp::solve_result_status::converged);
+}
+
+TEST_CASE("mpc on osqp_solver reports the posed rows' violation of its returned primal", "[mpc][osqp][diagnostics]")
+{
+    constexpr double step = 0.05;
+    Eigen::Matrix2d A;
+    A << 1.0, step, 0.0, 1.0;
+    Eigen::Vector2d B;
+    B << 0.5 * step * step, step;
+    const ctrlpp::discrete_state_space<double, NX, NU, NX> sys{A, B, Eigen::Matrix2d::Identity(), Eigen::Matrix<double, 2, 1>::Zero()};
+
+    constexpr double u_bound = 1.0;
+    ctrlpp::mpc_config<double, NX, NU> cfg{
+            .horizon = 10,
+            .Q = Eigen::Matrix2d::Identity(),
+            .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+            .u_min = Eigen::Matrix<double, 1, 1>::Constant(-u_bound),
+            .u_max = Eigen::Matrix<double, 1, 1>::Constant(u_bound),
+    };
+    const Eigen::Vector2d x0{5.0, 1.0};
+
+    // Polishing would replace the iterate with the active set's exact solution and hide the tolerance-level overshoot.
+    constexpr bool polishing = false;
+
+    SECTION("loose tolerances report the input bound's overshoot")
+    {
+        auto controller = OsqpMpc::create(sys, cfg, ctrlpp::osqp_solver{1e-3, 1e-3, osqp_default_max_iter, false, true, polishing});
+        REQUIRE(controller.has_value());
+        auto u = controller->solve(x0);
+        REQUIRE(u.has_value());
+        REQUIRE(u->status == ctrlpp::solve_result_status::converged);
+
+        auto v = violation_of(*controller, sys, x0, u_bound);
+        auto reported = controller->diagnostics().max_constraint_violation;
+        CHECK(reported > 1e-4);
+        CHECK(v.input_overshoot > v.equality_residual);
+        CHECK_THAT(reported, WithinAbs(v.input_overshoot, 1e-12));
+    }
+
+    SECTION("tight tolerances report about zero")
+    {
+        auto controller = OsqpMpc::create(sys, cfg, ctrlpp::osqp_solver{1e-9, 1e-9, osqp_default_max_iter, false, true, polishing});
+        REQUIRE(controller.has_value());
+        REQUIRE(controller->solve(x0).has_value());
+
+        auto v = violation_of(*controller, sys, x0, u_bound);
+        auto reported = controller->diagnostics().max_constraint_violation;
+        CHECK(reported < 1e-8);
+        CHECK_THAT(reported, WithinAbs(std::max({v.input_overshoot, v.equality_residual, 0.0}), 1e-12));
+    }
 }

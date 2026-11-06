@@ -13,6 +13,7 @@
 #include "ctrlpp/model/state_space.h"
 
 #include <Eigen/Dense>
+#include <Eigen/Sparse>
 
 #include <cstddef>
 #include <cstdint>
@@ -35,10 +36,12 @@ protected:
     Matrix<Scalar, NX, NX> m_Qf_state;
     Matrix<Scalar, NX, NY> m_CtQ;
     Matrix<Scalar, NX, NY> m_Qf_linear;
+    Eigen::SparseMatrix<Scalar, Eigen::ColMajor> m_constraint_matrix;
 
     qp_update<Scalar> m_update;
     Eigen::VectorX<Scalar> m_last_primal;
     Eigen::VectorX<Scalar> m_last_dual;
+    Eigen::VectorX<Scalar> m_constraint_product;
     mpc_diagnostics<Scalar> m_last_diagnostics;
     Vector<Scalar, NU> m_u_prev;
     bool m_has_solution;
@@ -57,9 +60,11 @@ protected:
         , m_Qf_state{std::move(terminal.state)}
         , m_CtQ{system.C.transpose() * config.Q}
         , m_Qf_linear{std::move(terminal.linear)}
+        , m_constraint_matrix{constraint_matrix()}
         , m_update{}
         , m_last_primal{}
         , m_last_dual{}
+        , m_constraint_product{}
         , m_last_diagnostics{}
         , m_u_prev{Vector<Scalar, NU>::Zero()}
         , m_has_solution{false}
@@ -94,16 +99,21 @@ protected:
                 m_config.horizon, m_config.x_min, m_config.x_max, m_config.u_min, m_config.u_max, m_config.du_max, m_config.terminal_constraint_set);
     }
 
+    // Kept after setup because each solve measures the returned primal's violation of these rows.
+    Eigen::SparseMatrix<Scalar, Eigen::ColMajor> constraint_matrix() const
+    {
+        return detail::build_constraint_matrix<Scalar, NX, NU>(m_config.horizon, m_system.A, m_system.B, m_config.x_min, m_config.x_max, uses_soft_state_constraints(), m_config.u_min,
+                m_config.u_max, m_config.du_max, m_config.terminal_constraint_set);
+    }
+
     qp_problem<Scalar> initial_problem() const
     {
         std::int32_t N = m_config.horizon;
         bool use_soft = uses_soft_state_constraints();
 
-        // Both builders read the same optionals, so the matrix and the bounds
-        // vectors cannot come out of this function with different row counts.
+        // The kept constraint matrix and these bounds vectors are built from the same
+        // optionals, so they cannot disagree on the row count.
         auto P = detail::build_cost_matrix<Scalar, NX, NU>(N, m_Q_state, m_config.R, m_Qf_state, use_soft, m_config.soft_penalty, m_config.soft_state_penalty);
-        auto A = detail::build_constraint_matrix<Scalar, NX, NU>(
-                N, m_system.A, m_system.B, m_config.x_min, m_config.x_max, use_soft, m_config.u_min, m_config.u_max, m_config.du_max, m_config.terminal_constraint_set);
 
         Vector<Scalar, NX> x0_dummy = Vector<Scalar, NX>::Zero();
         auto [l, u] = detail::build_bounds_vectors<Scalar, NX, NU>(
@@ -111,7 +121,7 @@ protected:
 
         auto q = detail::build_cost_vector<Scalar, NX, NU>(N, m_n_dec, m_Q_state, m_Qf_state);
 
-        return qp_problem<Scalar>{.P = std::move(P), .q = std::move(q), .A = std::move(A), .l = std::move(l), .u = std::move(u)};
+        return qp_problem<Scalar>{.P = std::move(P), .q = std::move(q), .A = m_constraint_matrix, .l = std::move(l), .u = std::move(u)};
     }
 
     void allocate_update_vectors()
@@ -122,6 +132,8 @@ protected:
         m_update.l.setZero();
         m_update.u.resize(m_n_con);
         m_update.u.setZero();
+        m_constraint_product.resize(m_n_con);
+        m_constraint_product.setZero();
     }
 };
 

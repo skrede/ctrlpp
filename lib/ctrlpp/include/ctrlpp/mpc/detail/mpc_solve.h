@@ -122,10 +122,19 @@ private:
         this->m_last_primal = std::move(result.x);
         this->m_last_dual = std::move(result.y);
         this->m_has_solution = true;
+        this->m_last_diagnostics.max_constraint_violation = posed_constraint_violation();
 
         Vector<Scalar, NU> u0 = this->m_last_primal.segment(this->m_n_x_total, nu);
         this->m_u_prev = u0;
         return solve_output<Scalar, NU>{.input = std::move(u0), .status = status};
+    }
+
+    // The rows as posed: a soft state row carries its slack column, so an overshoot the slack absorbs is not counted.
+    Scalar posed_constraint_violation()
+    {
+        auto& Ax = this->m_constraint_product;
+        Ax.noalias() = this->m_constraint_matrix * this->m_last_primal.head(this->m_n_dec);
+        return (this->m_update.l - Ax).cwiseMax(Ax - this->m_update.u).cwiseMax(Scalar{0}).maxCoeff();
     }
 };
 

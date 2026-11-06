@@ -264,7 +264,8 @@ Returns the diagnostics of the last solve, defined in `ctrlpp/mpc/diagnostics.h`
 | `solve_time` | The backend's solve time; always `0` on `argmin_qp_solver` |
 | `cost` | The backend's QP objective, which omits the constant reference terms, so it can be negative while tracking |
 | `primal_residual`, `dual_residual` | The backend's residuals |
-| `max_constraint_violation`, `max_path_constraint_violation`, `max_terminal_constraint_violation`, `total_slack` | Always `0`; the linear controller does not compute them |
+| `max_constraint_violation` | The largest violation of the posed QP's rows at the returned primal `x`, `max_i max(l_i - (A x)_i, (A x)_i - u_i, 0)`, over the initial-state and dynamics equalities and the state, input, rate and terminal-set rows. Under soft state constraints the state rows are the relaxed rows `x_k - s_k`, so an overshoot the slack absorbs is not counted. A converged solve can report a positive value, since the backend stops within its tolerance. Written only when the answer is accepted, `0` otherwise |
+| `max_path_constraint_violation`, `max_terminal_constraint_violation`, `total_slack` | Always `0`; the linear controller does not compute them |
 | `stop_criterion` | Always `nlp_stop_criterion::unreported` |
 
 ## Terminal sets
