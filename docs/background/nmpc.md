@@ -151,14 +151,16 @@ with a quadratic penalty instead.
 
 ## Stability
 
-Stability analysis for NMPC follows the same framework as linear MPC but with
-stronger assumptions [3, Sec. 5, pp. 800--808]:
+Stability analysis for NMPC uses the same sufficient conditions as linear MPC;
+for a nonlinear model they are met locally, from the linearization at the
+origin [3, Secs. 3.2--3.3, pp. 796--797; Sec. 3.7.4.3, p. 801]:
 
 1. **Terminal cost**: $V_f(x)$ must be a local control Lyapunov function
    in a neighborhood of the origin
 2. **Terminal constraint**: $x_N$ must be constrained to a region where
    a local stabilizing controller exists
-3. **Continuity**: the stage cost and dynamics must be continuous
+3. **Continuity**: the value function must be continuous, the standing
+   assumption of the analysis
 
 When these conditions hold, the NMPC value function is a Lyapunov function
 and the closed loop is asymptotically stable. ctrlpp computes no terminal

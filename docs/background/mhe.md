@@ -5,9 +5,10 @@ Control. Instead of optimizing future inputs over a prediction horizon, MHE
 optimizes past state estimates over a fixed window of recent measurements. It
 provides optimal state estimation for constrained systems where the Kalman
 filter cannot enforce physical bounds on states
-[1, Sec. 4, pp. 248--252].
+[1, Sec. 1, p. 246; Sec. 4, pp. 253--254].
 
-MHE was formalized by Rao, Rawlings, and Mayne [1] and shares the same
+Rao, Rawlings, and Mayne [1] gave a general theory of constrained MHE, with
+sufficient conditions for its stability. MHE shares the same
 receding-horizon philosophy as MPC: solve a finite-window optimization at each
 step, use only the most recent estimate, and slide the window forward.
 
@@ -17,7 +18,7 @@ At time $k$, MHE estimates the state trajectory over the most recent $N$ time
 steps. For a linear system $x_{i+1} = A x_i + B u_i + w_i$ with measurements
 $z_i = H x_i + v_i$, the decision variables are the initial state $x_{k-N}$
 and the process noise sequence $\{w_{k-N}, \ldots, w_{k-1}\}$
-[1, Sec. 3, pp. 249--253]:
+[1, Sec. 1, p. 248]:
 
 $$
 \min_{x_{k-N}, \, w_{k-N:k-1}} \;
@@ -56,7 +57,7 @@ The three terms balance:
 The first term $\lVert x_{k-N} - \bar{x}_{k-N} \rVert^2_{P_{\text{arr}}^{-1}}$
 is the arrival cost. It summarizes all information from measurements before
 the estimation window into a single quadratic penalty
-[1, Sec. 3.1, pp. 250--251].
+[1, Sec. 1, pp. 247--248].
 
 As the window slides forward, the arrival cost must be updated:
 
@@ -74,7 +75,7 @@ the correction with $z_{k-N}$, so that measurement is not counted twice.
 
 For linear systems without constraints, the exact arrival cost equals the
 Kalman filter covariance: $\bar{x}_{k-N} = \hat{x}_{k-N}^{\text{KF}}$ and
-$P_{\text{arr}} = P_{k-N}^{\text{KF}}$ [1, Sec. 3.2, pp. 251--253], both the
+$P_{\text{arr}} = P_{k-N}^{\text{KF}}$ [1, Sec. 1, Eqs. (2)--(3), p. 248], both the
 predicted quantities at $k-N$.
 
 ### Approximate Update (Nonlinear Systems)
@@ -94,7 +95,7 @@ estimate.
 For linear systems without state constraints, MHE with infinite window length
 recovers the Kalman filter solution exactly. With finite window, MHE
 approximates the Kalman filter but can additionally enforce
-[1, Sec. 4.1, pp. 253--255]:
+[1, Sec. 1, pp. 247--248; Sec. 4, p. 253]:
 
 $$
 x_{\min} \le x_i \le x_{\max}
@@ -116,7 +117,7 @@ Kalman filter's on an unconstrained linear plant.
 
 For linear dynamics, the MHE problem is a quadratic program. The structure
 is similar to linear MPC with the time direction reversed
-[3, Sec. 4.2, pp. 400--403]. ctrlpp poses it in the OSQP form its QP backends
+[3, Sec. 4.2.2, pp. 281--282]. ctrlpp poses it in the OSQP form its QP backends
 take:
 
 $$
@@ -139,16 +140,20 @@ For a nonlinear model, [NMHE](nmhe.md) keeps the model nonlinear.
 
 ## Convergence and Stability
 
-Rao, Rawlings, and Mayne [1, Sec. 5, pp. 255--258] proved that MHE
-converges under the following conditions:
+Rao, Rawlings, and Mayne [1, Sec. 3, pp. 250--253] proved that MHE is an
+asymptotically stable observer under the following conditions:
 
-1. The system is detectable (all unobservable modes are stable)
-2. The arrival cost is updated consistently (EKF approximation or exact)
-3. The estimation window $N$ is sufficiently long
+1. The system is uniformly observable (their Definition 2.4)
+2. The approximate arrival cost meets their conditions C1 and C2: it is
+   bounded above by a K-function of the distance from the estimate, and it
+   adds no information the data do not hold. The Kalman filter's arrival cost
+   meets them for a linear model with convex constraints; for a nonlinear
+   model an approximation generally does not, and the paper rescales it online
+3. The estimation window is at least the observability horizon, $N \ge N_o$
 
-The estimation error is bounded and converges to zero as the window length
-increases. In practice, window lengths of 10--50 steps are typical, depending
-on the system dynamics and measurement rate.
+Without disturbances the estimation error converges to zero; with bounded
+disturbances it stays bounded. In practice, window lengths of 10--50 steps are
+typical, depending on the system dynamics and measurement rate.
 
 ## Tuning Guidelines
 

@@ -63,7 +63,7 @@ inline void build_mhe_hessian_cross_terms(std::vector<Eigen::Triplet<Scalar>>& t
     }
 }
 
-// @cite rawlings2017 -- Rawlings, Mayne & Diehl, MPC, 2nd ed., 2017, Ch. 4 (block-sparse MHE Hessian structure)
+// @cite rawlings2017 -- Rawlings, Mayne & Diehl, MPC, 2nd ed., 2017, Sec. 8.8.1 (block-banded stagewise structure)
 template <typename Scalar, std::size_t NX, std::size_t NY>
 Eigen::SparseMatrix<Scalar, Eigen::ColMajor> build_mhe_hessian(const mhe_qp_dims& dims, std::int32_t Ni, Scalar arrival_weight, const Matrix<Scalar, NX, NX>& P_arr_inv,
         const Matrix<Scalar, NX, NX>& Q_inv, const Matrix<Scalar, NY, NY>& R_inv, const Matrix<Scalar, NX, NX>& A, const Matrix<Scalar, NY, NX>& H)

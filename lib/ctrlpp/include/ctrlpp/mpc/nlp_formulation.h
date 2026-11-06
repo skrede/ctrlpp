@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_MPC_NLP_FORMULATION_H
 
 // @cite rawlings2017 -- Rawlings et al., "Model Predictive Control: Theory, Computation, and Design", 2017, Ch. 8 (NMPC, multiple shooting)
-// @cite diehl2002 -- Diehl, Bock, Schloder et al., "Real-Time Optimization and Nonlinear Model Predictive Control of Processes Governed by DAEs", J. Process Control 12(4), 2002 (real-time iteration scheme)
+// @cite diehl2002 -- Diehl, Bock, Schloder et al., "Real-Time Optimization and Nonlinear Model Predictive Control of Processes Governed by DAEs", J. Process Control 12(4), 2002, Sec. 3.2, Eqs. 11-17 (direct multiple shooting)
 
 #include "ctrlpp/mpc/nlp_types.h"
 #include "ctrlpp/mpc/nlp_solver.h"

@@ -4,7 +4,7 @@ Nonlinear Moving Horizon Estimation (NMHE) extends the MHE framework to
 systems with nonlinear dynamics and measurement models. Instead of solving a
 quadratic program, NMHE solves a nonlinear program (NLP) over a sliding
 window of recent measurements, enabling state estimation for general nonlinear
-constrained systems [1, Sec. 4, pp. 248--258].
+constrained systems [1, Sec. 1, pp. 246--248].
 
 NMHE is the estimation dual of nonlinear MPC: both solve NLPs at each time
 step and both use receding horizons. In ctrlpp, `nmhe` and the NMPC
@@ -14,7 +14,7 @@ controllers take the same NLP backends through the `nlp_solver` concept.
 
 For a discrete nonlinear system $x_{i+1} = f(x_i, u_i) + w_i$ with
 measurements $z_i = h(x_i) + v_i$, the NMHE problem at time $k$ is
-[1, Sec. 4.2, pp. 253--256]:
+[1, Sec. 1, p. 248]:
 
 $$
 \min_{x_{k-N}, \, w_{k-N:k-1}} \;
@@ -50,7 +50,7 @@ $g(x_i) \le 0$ that can be softened (see [State Constraints](#state-constraints)
 The NLP decision variables are the initial state $x_{k-N}$ and the process
 noise sequence $w_{k-N}, \ldots, w_{k-1}$. The remaining states are
 determined implicitly by the dynamics constraints
-[1, Sec. 4.2, pp. 254--255]:
+[1, Sec. 1, p. 248]:
 
 $$
 x_{i+1} = f(x_i, u_i) + w_i, \quad i = k-N, \ldots, k-1
@@ -81,7 +81,7 @@ relies on the backend's own Hessian approximation.
 
 The arrival cost in NMHE must summarize information from all measurements
 before the estimation window. For nonlinear systems, the exact arrival cost
-is intractable, so approximations are used [1, Sec. 4.3, pp. 256--258]:
+is intractable, so approximations are used [1, Sec. 1, p. 248]:
 
 ### EKF-Based Arrival Cost
 
@@ -103,7 +103,7 @@ only the EKF-based arrival cost.
 ## State Constraints
 
 NMHE handles state constraints directly in the NLP formulation. Common
-constraint types [1, Sec. 4.1, pp. 253--254]:
+constraint types [1, Sec. 1, p. 246]:
 
 - **Box constraints**: $x_{\min} \le x_i \le x_{\max}$ (non-negative
   concentrations, bounded temperatures)
