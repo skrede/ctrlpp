@@ -84,7 +84,7 @@ inline Scalar solve_scaled_trapezoidal_acceleration(Config const& cfg, Scalar ab
 
 // eq. (3.14) made necessary as well as sufficient: in the positive frame the shape exists exactly when the
 // triangular peak reaches the larger boundary velocity, which needs a raise only when v0 + v1 > 0.
-// @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.14)-(3.15), p.72
+// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.2.7, eq. (3.14), p.71
 template <typename Scalar, typename Config>
 inline Scalar solve_trapezoidal_acceleration(Config const& cfg)
 {
@@ -138,7 +138,7 @@ inline Scalar triangular_ramp_duration(Scalar abs_h, Scalar v_peak, Scalar v_fro
     auto const cruise_term = abs_h / peak_sum * s;
     auto const swept_term = half_ratio_of_products(s * v_to - s * v_from, s * v_to + s * v_from, a, s * peak_sum);
     auto const duration = cruise_term + swept_term;
-    // On the boundary eq. (3.15) raises the acceleration onto, the two terms cancel to a ramp of exactly
+    // On the boundary eq. (3.14) raises the acceleration onto, the two terms cancel to a ramp of exactly
     // zero, so a negative residual within their four roundings is that zero.
     constexpr Scalar rounding_ops{4};
     auto const resolution = rounding_ops * std::numeric_limits<Scalar>::epsilon() * cruise_term;

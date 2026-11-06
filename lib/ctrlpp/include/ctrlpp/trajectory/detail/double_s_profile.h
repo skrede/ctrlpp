@@ -29,7 +29,7 @@ protected:
         ddq = ddq_value;
     }
 
-    // @cite biagiotti2009 -- Sec. 3.4, eq. (3.30a)-(3.30g), p.85-86
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4.1, eq. (3.30a)-(3.30g), p.88-89
     void evaluate_positive_frame(Scalar tc, Scalar& q, Scalar& dq, Scalar& ddq) const
     {
         auto const t3 = this->m_accel_duration;
@@ -53,7 +53,7 @@ protected:
         }
     }
 
-    // @cite biagiotti2009 -- Sec. 3.4, eq. (3.30a)-(3.30c), p.85
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4.1, eq. (3.30a)-(3.30c), p.88
     void eval_accel_phase(Scalar tc, Scalar& q, Scalar& dq, Scalar& ddq) const
     {
         auto const j = this->m_j_max;
@@ -92,7 +92,7 @@ protected:
         dq = nearer_anchor_velocity(v_start, v_end, this->m_a_lim_a, t_from_start, t_to_end);
     }
 
-    // @cite biagiotti2009 -- Sec. 3.4, eq. (3.30e)-(3.30g), p.86
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4.1, eq. (3.30e)-(3.30g), p.89
     void eval_decel_phase(Scalar tc, Scalar& q, Scalar& dq, Scalar& ddq) const
     {
         auto const j = this->m_j_max;

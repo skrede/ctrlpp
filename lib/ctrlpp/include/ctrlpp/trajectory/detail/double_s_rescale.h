@@ -102,7 +102,7 @@ protected:
 
     // A rebuilt profile is admissible only with a positive duration and a peak at or below its own scaled
     // velocity limit; the boundary velocities are the command, not a limit, and stay unscaled.
-    // @cite biagiotti2009 -- Sec. 5.3, eq. (5.13)-(5.14) -- time scaling of a profile
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 5.2, eq. (5.3)-(5.4), p.229-230
     template <typename Profile>
     static ctrlpp::expected<Profile, trajectory_error> rebuild_scaled(typename Profile::config const& cfg, Scalar lambda)
     {

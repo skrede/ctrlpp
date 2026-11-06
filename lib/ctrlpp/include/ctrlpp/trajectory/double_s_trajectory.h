@@ -42,7 +42,7 @@ public:
         std::uint32_t boundary_velocity_rounding_ops{};
     };
 
-    // @cite biagiotti2009 -- Sec. 3.4.1, p.79-85
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4, eq. (3.17)-(3.18), p.80-81
     static ctrlpp::expected<double_s_trajectory, trajectory_error> create(config const& requested)
     {
         auto const limits = base::check_limits(requested);
@@ -64,7 +64,7 @@ public:
 
     // The clamp is defined only because `create` rejects a negative duration: std::clamp with its lower
     // bound above its upper bound is undefined behavior.
-    // @cite biagiotti2009 -- Sec. 3.4, eq. (3.30a)-(3.30g), p.85-86
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4.1, eq. (3.30a)-(3.30g), p.88-89
     trajectory_point<Scalar, 1> evaluate(Scalar t) const
     {
         if(this->m_duration <= Scalar{0})
@@ -84,14 +84,14 @@ public:
         Scalar q{}, dq{}, ddq{};
         this->evaluate_positive_frame(tc, q, dq, ddq);
 
-        // @cite biagiotti2009 -- Sec. 3.4.2, eq. (3.33), p.87
+        // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4.2, eq. (3.33), p.90
         auto const q_actual = this->m_q0 + this->m_sigma * (q - Scalar{0});
         auto const dq_actual = this->m_sigma * dq;
         auto const ddq_actual = this->m_sigma * ddq;
         return this->make_point(q_actual, dq_actual, ddq_actual);
     }
 
-    // @cite biagiotti2009 -- Sec. 3.4, eq. (3.30a)-(3.30g), p.85-86
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4.1, eq. (3.30a)-(3.30g), p.88-89
     void evaluate(Scalar t, Scalar& q, Scalar& dq, Scalar& ddq) const
     {
         if(this->m_duration <= Scalar{0})
@@ -112,7 +112,7 @@ public:
         }
         Scalar pq{}, pdq{}, pddq{};
         this->evaluate_positive_frame(tc, pq, pdq, pddq);
-        // @cite biagiotti2009 -- Sec. 3.4.2, eq. (3.33), p.87
+        // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4.2, eq. (3.33), p.90
         this->store_point(q, dq, ddq, this->m_q0 + this->m_sigma * (pq - Scalar{0}), this->m_sigma * pdq, this->m_sigma * pddq);
     }
 
@@ -122,7 +122,7 @@ public:
 
     Scalar peak_velocity() const { return this->m_v_lim; }
 
-    // @cite biagiotti2009 -- Sec. 5.3, eq. (5.13)-(5.14) -- time scaling for synchronization
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 5.2, eq. (5.3)-(5.4), p.229-230
     ctrlpp::expected<void, trajectory_error> rescale_to(Scalar T_new)
     {
         auto const solved = this->solve_rescale(*this, T_new);
