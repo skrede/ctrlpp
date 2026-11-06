@@ -210,7 +210,7 @@ private:
         return m_P;
     }
 
-    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Sec. 3.1
+    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 7.53
     std::array<state_vector_t, num_sigma> propagate_sigma_points(const std::array<state_vector_t, num_sigma>& points, const input_vector_t& u) const
     {
         std::array<state_vector_t, num_sigma> propagated;
@@ -219,7 +219,7 @@ private:
         return propagated;
     }
 
-    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 17
+    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 7.54
     state_vector_t compute_predicted_mean(const std::array<Scalar, num_sigma>& Wm, const std::array<state_vector_t, num_sigma>& propagated) const
     {
         state_vector_t x_pred = state_vector_t::Zero();
@@ -228,7 +228,7 @@ private:
         return x_pred;
     }
 
-    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 18
+    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 7.55
     cov_matrix_t compute_predicted_covariance(const std::array<Scalar, num_sigma>& Wc, const std::array<state_vector_t, num_sigma>& propagated, const state_vector_t& x_pred) const
     {
         cov_matrix_t P_pred = cov_matrix_t::Zero();
@@ -249,7 +249,7 @@ private:
         return z_sigma;
     }
 
-    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 22
+    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 7.58
     output_vector_t compute_predicted_measurement(const std::array<Scalar, num_sigma>& Wm, const std::array<output_vector_t, num_sigma>& z_sigma) const
     {
         output_vector_t z_pred = output_vector_t::Zero();
@@ -258,7 +258,7 @@ private:
         return z_pred;
     }
 
-    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 23-24
+    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 7.59-7.60
     std::pair<meas_cov_matrix_t, Eigen::Matrix<Scalar, nx, ny>> compute_innovation_and_cross_covariance(
             const auto& sigma, const std::array<output_vector_t, num_sigma>& z_sigma, const output_vector_t& z_pred) const
     {
@@ -278,7 +278,7 @@ private:
         return {S, Pxz};
     }
 
-    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 25
+    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 7.61
     Eigen::Matrix<Scalar, nx, ny> compute_kalman_gain(const Eigen::Matrix<Scalar, nx, ny>& Pxz, const meas_cov_matrix_t& S) const
     {
         Eigen::Matrix<Scalar, ny, nx> KT;
@@ -293,7 +293,7 @@ private:
 
     // The reduction P - K S K^T equals P - K Pxz^T, so no K R K^T term is added. It starts from the
     // covariance the sigma set represents, the repaired one after a repair, since K and S describe that one.
-    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 26-27
+    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 7.62-7.63
     void apply_correction_and_update_covariance(const Eigen::Matrix<Scalar, nx, ny>& K, const meas_cov_matrix_t& S, const cov_matrix_t& base)
     {
         m_x = (m_x + K * m_innovation).eval();

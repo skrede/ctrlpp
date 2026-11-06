@@ -133,7 +133,7 @@ protected:
         return true;
     }
 
-    // @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993, Sec. 5
+    // @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993, Sec. 4.2
     void apply_roughening()
     {
         if(this->m_roughening_scale <= Scalar{0})

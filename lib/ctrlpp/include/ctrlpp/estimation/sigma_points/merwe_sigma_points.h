@@ -53,7 +53,7 @@ public:
     // With lambda = alpha^2 (n + kappa) - n, the weight denominator and the squared offset scale both equal
     // alpha^2 (n + kappa), so its positivity is the exact domain. A negative alpha is refused as well: only
     // alpha^2 reaches the weights, so it would give finite but wrong ones.
-    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 15
+    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 7.30
     static ctrlpp::expected<merwe_sigma_points, filter_error> try_create(options_t opts = options_t{})
     {
         if(!std::isfinite(opts.alpha) || opts.alpha <= Scalar{0})
@@ -65,7 +65,7 @@ public:
 
     // The unpivoted Cholesky factor squares back to P exactly; a P that is not positive definite is
     // repaired to the nearest such matrix and the repair is reported through the result.
-    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 15
+    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 7.30, 7.34
     // @cite vandermerwe2004 -- Van der Merwe, "Sigma-Point Kalman Filters", PhD thesis, 2004
     sigma_result<Scalar, NX, num_points> generate(const Vector<Scalar, NX>& x, const Matrix<Scalar, NX, NX>& P) const
     {

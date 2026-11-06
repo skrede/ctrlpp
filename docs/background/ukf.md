@@ -22,7 +22,7 @@ function $g$ [2, Sec. III, pp. 404--406].
 ### Sigma-Point Generation
 
 For an $n$-dimensional state, the scaled UT generates $2n + 1$ sigma points
-[3, Sec. 7.2, pp. 226--230]:
+[3, Sec. 7.3, Eq. (7.30), pp. 228--229]:
 
 $$
 \mathcal{X}_0 = \hat{x}
@@ -45,7 +45,7 @@ repair.
 
 ### Sigma-Point Weights
 
-The mean and covariance weights are [3, Sec. 7.2, pp. 228--229]:
+The mean and covariance weights are [3, Sec. 7.3, Eq. (7.34), p. 229]:
 
 $$
 W_0^{(m)} = \frac{\lambda}{n + \lambda}, \qquad
@@ -59,7 +59,7 @@ $$
 ### Scaling Parameters
 
 The three parameters control the sigma-point distribution
-[3, Sec. 7.2, pp. 229--230]:
+[3, Sec. 7.3, p. 229]:
 
 - **$\alpha$**: determines the spread of sigma points around the mean.
   Small values ($10^{-4}$ to $1$) keep points close to the mean.
@@ -76,7 +76,7 @@ $\kappa = 0$, which make $W_0^{(m)}$ and $W_0^{(c)}$ about $-10^6$; the
 ### Transform Procedure
 
 Given sigma points $\mathcal{X}_i$ and a nonlinear function $g$
-[3, Sec. 7.3, pp. 231--234]:
+[3, Sec. 7.3, Eqs. (7.31)--(7.33), p. 229, and Eq. (7.60), p. 233]:
 
 1. **Propagate**: $\mathcal{Y}_i = g(\mathcal{X}_i)$ for $i = 0, \ldots, 2n$
 2. **Recover mean**: $\bar{y} = \sum_{i=0}^{2n} W_i^{(m)} \mathcal{Y}_i$
@@ -172,7 +172,7 @@ Two main strategies exist for generating sigma points:
 
 Uses three parameters $(\alpha, \beta, \kappa)$ for maximum flexibility. The
 scaling allows placing sigma points arbitrarily close to or far from the mean.
-This is the most widely used variant [3, Sec. 7.2].
+This is the most widely used variant [3, Sec. 7.3].
 
 ### Julier (Original)
 

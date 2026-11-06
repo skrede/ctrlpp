@@ -79,7 +79,7 @@ public:
                 std::move(resampler), std::move(rng), std::move(likelihood)};
     }
 
-    // @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993, Eq. 6
+    // @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993, Sec. 3.1
     void predict(const input_vector_t& u) { this->propagate_particles(u); }
 
     // @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993, Alg. 1

@@ -54,7 +54,7 @@ posterior [3, Sec. V-A, Eqs. (41)--(48), pp. 177--178].
 The Sequential Importance Resampling (SIR) or bootstrap filter is the simplest
 and most widely used variant. It uses the prior
 $p(x_k \mid x_{k-1}^{(i)}, u_{k-1})$ as the proposal distribution
-[2, Sec. 3, pp. 109--111].
+[2, Sec. 3.1, p. 108].
 
 ### Algorithm
 
