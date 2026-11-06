@@ -3,7 +3,7 @@
 
 // C2 cubic spline interpolation in the velocity formulation: one tridiagonal system for the knot velocities.
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
-// Automatic Machines and Robots", 2009, Sec. 4.4, eq. (4.10)-(4.11)
+// Automatic Machines and Robots", 2008, Sec. 4.4, eq. (4.10)-(4.11)
 // @cite deboor2001 -- de Boor, "A Practical Guide to Splines", Springer, 2001 (canonical reference for cubic-spline interpolation)
 
 #include "ctrlpp/trajectory/trajectory_types.h"

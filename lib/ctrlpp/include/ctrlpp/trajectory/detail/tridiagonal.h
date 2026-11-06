@@ -4,7 +4,7 @@
 // The Thomas algorithm, and its cyclic variant reduced to two standard solves through the Sherman-Morrison formula.
 // Both refuse a system they cannot tell from a singular one with spline_error::unrepresentable_spline.
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
-// Automatic Machines and Robots", 2009, Sec. 4.4; App. A.5, p.464-466
+// Automatic Machines and Robots", 2008, Sec. 4.4; App. A.5, p.464-466
 
 #include "ctrlpp/trajectory/trajectory_types.h"
 

@@ -31,7 +31,7 @@ protected:
             return;
         }
 
-        // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4.2, eq. (3.31)-(3.33), p.90
+        // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 3.4.2, eq. (3.31)-(3.33), p.90
         this->m_sigma = (h_signed > Scalar{0}) ? Scalar{1} : Scalar{-1};
         auto const h = this->m_sigma * h_signed;
         auto const v_max = cfg.v_max;
@@ -49,7 +49,7 @@ protected:
     }
 
     // In the positive-displacement frame; reduces exactly to the zero-boundary case when pv0 = pv1 = 0.
-    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4, eq. (3.19)-(3.27), p.81-83, Fig. 3.18, p.91
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 3.4, eq. (3.19)-(3.27), p.81-83, Fig. 3.18, p.91
     void compute_general_bc(Scalar h, Scalar v_max, Scalar a_max, Scalar j_max)
     {
         auto const pv_hi = std::max(this->m_pv0, this->m_pv1);
@@ -70,7 +70,7 @@ protected:
         set_general_no_cruise(rise, pv_hi, pv_lo, v_peak, a_max, j_max);
     }
 
-    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4, eq. (3.19)-(3.25), p.81-82
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 3.4, eq. (3.19)-(3.25), p.81-82
     bool set_general_cruise(Scalar h, Scalar v_max, Scalar a_max, Scalar j_max)
     {
         auto const accel = make_velocity_ramp(v_max - this->m_pv0, a_max, j_max);
@@ -94,7 +94,7 @@ protected:
     // below pv_hi, and subtracting pv_hi back out of a stored peak would discard most of its digits.
     // Where both ramps reach a_max the rise x solves x^2 + linear x + constant = 0; the larger root is
     // taken in the form that avoids subtracting nearly equal terms.
-    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4, eq. (3.26a)-(3.27), p.82-84
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 3.4, eq. (3.26a)-(3.27), p.82-84
     static Scalar general_rise(Scalar h, Scalar pv_hi, Scalar pv_lo, Scalar r_max, Scalar a_max, Scalar j_max)
     {
         auto const a_sq_over_j = a_max * a_max / j_max;

@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_TRAJECTORY_SEPTIC_PATH_H
 
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
-// Machines and Robots", 2009, Table 2.1, p.37; eq. 5.11-5.12
+// Machines and Robots", 2008, Table 2.1, p.37; eq. 5.11-5.12
 
 #include "ctrlpp/trajectory/trajectory_types.h"
 

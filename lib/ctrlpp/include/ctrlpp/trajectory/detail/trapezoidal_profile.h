@@ -84,7 +84,7 @@ inline Scalar solve_scaled_trapezoidal_acceleration(Config const& cfg, Scalar ab
 
 // eq. (3.14) made necessary as well as sufficient: in the positive frame the shape exists exactly when the
 // triangular peak reaches the larger boundary velocity, which needs a raise only when v0 + v1 > 0.
-// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.2.7, eq. (3.14), p.71
+// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 3.2.7, eq. (3.14), p.71
 template <typename Scalar, typename Config>
 inline Scalar solve_trapezoidal_acceleration(Config const& cfg)
 {

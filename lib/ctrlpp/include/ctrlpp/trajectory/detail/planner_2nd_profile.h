@@ -18,7 +18,7 @@ class planner_2nd_profile : protected planner_2nd_state<Scalar>
 protected:
     using planner_2nd_state<Scalar>::planner_2nd_state;
 
-    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.2.7, p.73-74
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 3.2.7, p.73-74
     void compute_profile()
     {
         auto const h_signed = this->m_target - this->m_q_ref;

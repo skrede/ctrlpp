@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_TRAJECTORY_TRAPEZOIDAL_TRAJECTORY_H
 
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
-// Automatic Machines and Robots", 2009, Sec. 3.2, eq. (3.9)-(3.15), p.65-74
+// Automatic Machines and Robots", 2008, Sec. 3.2, eq. (3.9)-(3.15), p.65-74
 
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/trapezoidal_types.h"
@@ -52,7 +52,7 @@ public:
         acceleration_limit_policy acceleration_policy{acceleration_limit_policy::refuse};
     };
 
-    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.2.7, eq. (3.14), p.71-74
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 3.2.7, eq. (3.14), p.71-74
     static ctrlpp::expected<trapezoidal_trajectory, trajectory_error> create(config const& requested)
     {
         if(!std::isfinite(requested.q0) || !std::isfinite(requested.q1) || !std::isfinite(requested.v0) || !std::isfinite(requested.v1))
@@ -115,7 +115,7 @@ public:
 
     trapezoidal_disposition<Scalar> const& disposition() const { return this->m_disposition; }
 
-    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.2.7, p.71-72
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 3.2.7, p.71-72
     ctrlpp::expected<void, trajectory_error> rescale_to(Scalar T_new)
     {
         auto const solved = this->solve_rescale(T_new);

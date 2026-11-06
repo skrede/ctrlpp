@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_TRAJECTORY_SYNCHRONIZE_H
 
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
-// Automatic Machines and Robots", 2009, Sec. 5.3
+// Automatic Machines and Robots", 2008, Sec. 5.3
 
 #include "ctrlpp/trajectory/trajectory_types.h"
 
@@ -16,7 +16,7 @@
 namespace ctrlpp
 {
 
-// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 5.2, eq. (5.3)-(5.4), p.229-230
+// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 5.2, eq. (5.3)-(5.4), p.229-230
 template <typename T>
 concept syncable_profile = requires(T& p, T const& cp, typename T::scalar_type dur) {
     { p.duration() } -> std::convertible_to<typename T::scalar_type>;
@@ -26,7 +26,7 @@ concept syncable_profile = requires(T& p, T const& cp, typename T::scalar_type d
 
 // Every axis is checked before any is retimed, so a rejection leaves all of them unchanged. The slowest axis is
 // retimed to a bit-exact copy of its own duration, which takes the no-op path.
-// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 5.3, p.241-243
+// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 5.3, p.241-243
 template <syncable_profile... Profiles>
 ctrlpp::expected<void, trajectory_error> synchronize(Profiles&... profiles)
 {
@@ -53,7 +53,7 @@ ctrlpp::expected<void, trajectory_error> synchronize(Profiles&... profiles)
     return status;
 }
 
-// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 5.3, p.241-243
+// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 5.3, p.241-243
 template <syncable_profile Profile>
 ctrlpp::expected<void, trajectory_error> synchronize(std::span<Profile> profiles)
 {

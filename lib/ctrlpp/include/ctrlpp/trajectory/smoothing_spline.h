@@ -4,7 +4,7 @@
 // Cubic smoothing spline: (R + lambda Q^T Q) d = Q^T q, with lambda = 2 (1 - mu) / (3 mu), is solved for the second
 // derivatives at the interior knots, d_0 = d_n = 0, and the coefficients follow from the smoothed positions q - lambda Q d.
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
-// Automatic Machines and Robots", 2009, Sec. 4.4.5
+// Automatic Machines and Robots", 2008, Sec. 4.4.5
 // @cite reinsch1967 -- Reinsch, "Smoothing by Spline Functions", Numerische Mathematik 10:177-183, 1967 (original smoothing-spline derivation)
 // @cite deboor2001 -- de Boor, "A Practical Guide to Splines", Springer, 2001 (cubic smoothing splines)
 

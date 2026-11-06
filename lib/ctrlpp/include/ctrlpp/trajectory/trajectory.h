@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_TRAJECTORY_TRAJECTORY_H
 
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
-// Machines and Robots", 2009, Sec. 5.2.1, eq. (5.5)-(5.6), p.230
+// Machines and Robots", 2008, Sec. 5.2.1, eq. (5.5)-(5.6), p.230
 
 #include "ctrlpp/trajectory/cycloidal_path.h"
 #include "ctrlpp/trajectory/trajectory_types.h"
@@ -52,7 +52,7 @@ private:
 };
 
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
-//   Machines and Robots", 2009, Ch. 2-5 -- complete trajectory generation framework
+//   Machines and Robots", 2008, Ch. 2-5 -- complete trajectory generation framework
 template <typename Law, typename Scalar, int Rows>
 ctrlpp::expected<trajectory<Law, Scalar, static_cast<std::size_t>(Rows)>, trajectory_error> make_trajectory(
         Law law, Eigen::Matrix<Scalar, Rows, 1> const& q0, Eigen::Matrix<Scalar, Rows, 1> const& q1, Scalar duration)

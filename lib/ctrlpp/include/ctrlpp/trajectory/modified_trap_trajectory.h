@@ -66,7 +66,7 @@ public:
 
     Scalar duration() const { return m_T; }
 
-    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.7, p.123
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 3.7, p.123
     Scalar peak_velocity() const { return Scalar{2} * m_h / m_T; }
 
 private:
@@ -75,7 +75,7 @@ private:
     Scalar m_sigma;
     Scalar m_T;
 
-    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.7, eq. (3.49)-(3.51), p.120-122
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 3.7, eq. (3.49)-(3.51), p.120-122
     void eval_first_half(Scalar t, Scalar& q, Scalar& dq, Scalar& ddq) const
     {
         constexpr auto pi = std::numbers::pi_v<Scalar>;

@@ -5,7 +5,7 @@ solves a finite-horizon optimal control problem at each time step, applies
 only the first element of the optimal input sequence, and repeats at the next
 step. This receding horizon approach handles state and input constraints
 naturally and provides a systematic way to balance tracking performance
-against control effort [1, Ch. 11, pp. 187--220].
+against control effort [1, Ch. 12, pp. 243--276].
 
 MPC owes its wide adoption in the chemical process industry to the fact that
 solving an optimization online for the measured state is practical where an
@@ -15,7 +15,7 @@ guidance are typical tracking applications [2, Sec. 2.8, p. 153].
 ## Receding Horizon Principle
 
 At each time step $k$, MPC performs four operations
-[1, Sec. 11.1, pp. 188--190]:
+[1, Secs. 12.1--12.2, pp. 243--245]:
 
 1. Measure (or estimate) the current state $x_k$
 2. Solve an optimization problem over a horizon of $N$ steps
@@ -31,7 +31,7 @@ state.
 
 For a discrete linear time-invariant system $x_{k+1} = A x_k + B u_k$ with
 output $y_k = C x_k$, the MPC problem at time $k$ is
-[1, Sec. 11.2, pp. 191--198]:
+[1, Sec. 11.1, pp. 211--212]:
 
 $$
 \min_{u_0, \ldots, u_{N-1}} \sum_{i=0}^{N-1} \left( x_i^\top Q \, x_i + u_i^\top R \, u_i \right) + x_N^\top Q_f \, x_N
@@ -62,7 +62,7 @@ the measured state.
 ## QP Standard Form
 
 For linear systems with quadratic cost, the MPC problem reduces to a
-quadratic program (QP). Two formulations exist [1, Sec. 11.3, pp. 199--205]:
+quadratic program (QP). Two formulations exist [1, Sec. 11.3.1, pp. 218--219]:
 
 ### Dense (Condensed) Formulation
 
@@ -97,12 +97,12 @@ This has $N \cdot (n_x + n_u) + n_x$ decision variables, plus $N n_x$ slacks
 when the state bounds are softened, but the matrices are block-sparse, enabling
 efficient specialized solvers. The sparse formulation preserves problem
 structure, is more efficient for long horizons, and enables warm-starting
-between time steps [1, Sec. 11.3, p. 203]. The controller warm-starts each
+between time steps [1, Sec. 11.3.1, p. 218]. The controller warm-starts each
 solve from the previous solve's primal and dual, unshifted.
 
 ## Constraints
 
-MPC naturally incorporates [1, Sec. 11.4, pp. 206--210]:
+MPC naturally incorporates [1, Sec. 11.1, pp. 211--212]:
 
 - **Input constraints**: actuator limits $u_{\min} \le u_i \le u_{\max}$
 - **State constraints**: safety limits $x_{\min} \le x_i \le x_{\max}$
@@ -115,7 +115,7 @@ MPC naturally incorporates [1, Sec. 11.4, pp. 206--210]:
 Hard state constraints can render the QP infeasible if the dynamics cannot
 satisfy them from the current state. Soft constraints add slack variables
 with penalty weights to maintain feasibility
-[1, Sec. 11.4, pp. 210--212]. ctrlpp's `mpc` adds one free slack $s_i$ per
+[1, Sec. 12.6, pp. 264--266]. ctrlpp's `mpc` adds one free slack $s_i$ per
 state and stage $i = 1, \ldots, N$ and penalizes it quadratically:
 
 $$
@@ -196,7 +196,7 @@ Tracking a nonzero reference is also outside it.
 
 For setpoint tracking, the cost function penalizes deviation from a target
 $(x_{\text{ref}}, u_{\text{ref}})$ rather than from the origin
-[1, Sec. 11.5, pp. 213--215]:
+[1, Sec. 12.7, pp. 270--271]:
 
 $$
 \min \sum_{i=0}^{N-1} \left( (x_i - x_{\text{ref}})^\top Q (x_i - x_{\text{ref}}) + (u_i - u_{\text{ref}})^\top R (u_i - u_{\text{ref}}) \right) + \ldots

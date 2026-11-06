@@ -79,7 +79,7 @@ where $\Phi = [\varphi(n+1), \ldots, \varphi(N)]^\top$ is the regression
 matrix and $Y = [y(n+1), \ldots, y(N)]^\top$; the sum starts where every
 regressor entry is a measured sample. For numerical stability, QR
 factorization is preferred over the normal equations
-[2, Sec. 6.3, pp. 203--208]; `batch_arx` solves with a column-pivoting QR,
+[2, Sec. 14.3.4, pp. 373--374]; `batch_arx` solves with a column-pivoting QR,
 which also returns a finite minimizer when $\Phi$ is rank-deficient.
 
 ## Recursive Least Squares (RLS)
@@ -216,7 +216,7 @@ detect overfitting.
 Hall, 1999.
 
 [2] A. K. Tangirala, "Principles of System Identification: Theory and
-Practice," 2nd ed., CRC Press, 2018.
+Practice," CRC Press, 2015.
 
 [3] M. Verhaegen and V. Verdult, "Filtering and System Identification: A
 Least Squares Approach," Cambridge University Press, 2007.

@@ -11,7 +11,7 @@ enum class acceleration_limit_policy
 };
 
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots",
-// 2009, Sec. 3.2.7, eq. (3.14), p.71
+// 2008, Sec. 3.2.7, eq. (3.14), p.71
 template <typename Scalar>
 struct trapezoidal_disposition
 {

@@ -73,7 +73,7 @@ protected:
     }
 
     // Neither v_max nor a_max reached.
-    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4.3, Case 2.b, p.93
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 3.4.3, Case 2.b, p.93
     void assign_doubly_degenerate(Scalar h, Scalar& T_j1, Scalar& T_a, Scalar& T_d, Scalar& T_j2, Scalar& v_lim) const
     {
         auto const T_j_dd = doubly_degenerate_jerk_time(h, this->m_v_max, this->m_a_max, this->m_j_max);
@@ -86,7 +86,7 @@ protected:
 
     // c = v_max T_a - h >= 0 is the distance the cruise-free profile at v_max lacks. Each peak is formed at or below
     // v_max, by the same arithmetic as double_s_trajectory.
-    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4.3, Case 2, p.92-93
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 3.4.3, Case 2, p.92-93
     void solve_no_cruise(Scalar h, Scalar c, bool a_max_reached, Scalar& T_j1, Scalar& T_a, Scalar& T_d, Scalar& T_j2, Scalar& v_lim) const
     {
         if(a_max_reached)
@@ -104,7 +104,7 @@ protected:
         assign_doubly_degenerate(h, T_j1, T_a, T_d, T_j2, v_lim);
     }
 
-    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4.3, p.90-93
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 3.4.3, p.90-93
     void compute_double_s_durations(Scalar h, Scalar& T_j1, Scalar& T_a, Scalar& T_v, Scalar& T_d, Scalar& T_j2, Scalar& v_lim) const
     {
         auto const v = this->m_v_max;
@@ -133,7 +133,7 @@ protected:
     }
 
     // Appends nothing when the shape does not exist for this command, so the caller can plan the move another way.
-    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4, eq. (3.19)-(3.27), p.81-83
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 3.4, eq. (3.19)-(3.27), p.81-83
     bool append_incorporate_velocity(Scalar q0, Scalar v0)
     {
         auto const created = double_s_trajectory<Scalar>::create({

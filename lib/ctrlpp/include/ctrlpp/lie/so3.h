@@ -4,8 +4,7 @@
 // Hamilton convention throughout: q1 * q2 is rotation q1 followed by q2. Serialization is w-first,
 // [w, x, y, z], while Eigen::Quaternion stores [x, y, z, w], so coeffs() is never exposed; the
 // components are read through w(), vec(), x(), y() and z().
-// @cite sola2018 -- Sola et al., "A micro Lie theory for state estimation in robotics", 2018
-// @cite barfoot2017 -- Barfoot, "State Estimation for Robotics", 2017, Ch. 7 (rotations, hemisphere canonicalization of the log map)
+// @cite sola2018 -- Sola, Deray & Atchuthan, "A micro Lie theory for state estimation in robotics", arXiv:1812.01537v9, 2021, App. B, Eqs. 131 and 138, and App. B-A after Eq. 133
 
 #include "ctrlpp/types.h"
 #include "ctrlpp/expected.h"
@@ -91,8 +90,7 @@ Vector<Scalar, 3> log(const Eigen::Quaternion<Scalar>& q)
     return inv_sinc_half * qc.vec();
 }
 
-// @cite sola2018 -- Sola, Deray & Atchuthan, "A micro Lie theory for state estimation in robotics", arXiv:1812.01537v9, 2021, App. B
-// @cite barfoot2017 Ch. 7 (quaternion composition under Hamilton convention)
+// @cite sola2018 -- Sola, Deray & Atchuthan, "A micro Lie theory for state estimation in robotics", arXiv:1812.01537v9, 2021, App. B, Eq. 131
 template <typename Scalar>
 Eigen::Quaternion<Scalar> compose(const Eigen::Quaternion<Scalar>& q1, const Eigen::Quaternion<Scalar>& q2)
 {

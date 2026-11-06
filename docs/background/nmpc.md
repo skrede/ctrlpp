@@ -3,8 +3,7 @@
 Nonlinear Model Predictive Control (NMPC) extends the MPC framework to
 systems with nonlinear dynamics and constraints. Instead of solving a
 quadratic program at each time step, NMPC solves a nonlinear program (NLP),
-enabling direct handling of nonlinear process models without linearization
-[1, Ch. 12, pp. 221--250].
+enabling direct handling of nonlinear process models without linearization.
 
 NMPC is essential for systems where linearization around an operating point
 is insufficiently accurate, such as chemical reactors, aerospace vehicles,
@@ -14,7 +13,7 @@ and robotic manipulators operating over wide operating envelopes
 ## Nonlinear MPC Formulation
 
 For a discrete nonlinear system $x_{k+1} = f(x_k, u_k)$, the NMPC problem
-at time $k$ is [1, Sec. 12.1, pp. 222--226]:
+at time $k$ is:
 
 $$
 \min_{x_{0:N}, u_{0:N-1}} \sum_{i=0}^{N-1} \ell(x_i, u_i) + V_f(x_N)
@@ -88,7 +87,7 @@ $$
 
 SQP solves the NLP by iterating over QP subproblems. At each iteration,
 the cost is approximated by a quadratic model and the constraints by their
-first-order Taylor expansions [1, Sec. 12.3, pp. 232--236]:
+first-order Taylor expansions:
 
 $$
 \min_{\Delta z} \; \frac{1}{2} \Delta z^\top H_k \Delta z + \nabla f_k^\top \Delta z
@@ -126,16 +125,16 @@ and feedback phases.
 ### Path Constraints
 
 General nonlinear path constraints $g(x_i, u_i) \le 0$ enter the NLP
-directly. The NLP solver handles them via active-set or interior-point methods
-[1, Sec. 12.4, pp. 237--240]. ctrlpp ships no interior-point backend: argmin's
-SQP policies solve active-set QP subproblems, and the other backends handle the
-rows by moving asymptotes, derivative-free models or an augmented Lagrangian.
+directly. The NLP solver handles them via active-set or interior-point methods.
+ctrlpp ships no interior-point backend: argmin's SQP policies solve active-set
+QP subproblems, and the other backends handle the rows by moving asymptotes,
+derivative-free models or an augmented Lagrangian.
 
 ### Soft Constraints
 
 As in linear MPC, infeasibility can occur when hard constraints conflict with
 the dynamics. Soft constraints with L1 penalty relaxation prevent solver
-failure [1, Sec. 12.4, pp. 240--242]:
+failure [1, Sec. 12.6, pp. 264--266]:
 
 $$
 g(x_i, u_i) - \epsilon_i \le 0, \quad \epsilon_i \ge 0

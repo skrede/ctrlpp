@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_TRAJECTORY_DETAIL_CUBIC_SPLINE_SOLVE_H
 
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
-// Automatic Machines and Robots", 2009, Sec. 4.4, eq. (4.10)-(4.11)
+// Automatic Machines and Robots", 2008, Sec. 4.4, eq. (4.10)-(4.11)
 
 #include "ctrlpp/trajectory/detail/tridiagonal.h"
 #include "ctrlpp/trajectory/detail/spline_checks.h"

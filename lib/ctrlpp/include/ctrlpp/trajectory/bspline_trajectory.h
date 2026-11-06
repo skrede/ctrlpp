@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_TRAJECTORY_BSPLINE_TRAJECTORY_H
 
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
-// Automatic Machines and Robots", 2009, Sec. 4.5
+// Automatic Machines and Robots", 2008, Sec. 4.5
 // @cite deboor2001 -- de Boor, "A Practical Guide to Splines", Springer, 2001 (de Boor evaluation algorithm)
 // @cite piegl1997 -- Piegl & Tiller, "The NURBS Book", 2nd ed., 1997, Ch. 2-3 (B-spline basis and knot averaging)
 

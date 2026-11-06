@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_TRAJECTORY_H
 
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
-// Machines and Robots", 2009
+// Machines and Robots", 2008
 
 #include "ctrlpp/trajectory/cubic_path.h"
 #include "ctrlpp/trajectory/trajectory.h"

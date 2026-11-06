@@ -162,7 +162,7 @@ iterate: it linearizes the measurement once per update.
 ## Consistency Monitoring
 
 The innovation sequence $\tilde{y}_k$ provides a diagnostic for filter
-health. For a well-tuned EKF [2, Sec. 8.4, pp. 232--235]:
+health. For a well-tuned EKF:
 
 - The normalized innovation squared (NIS):
   $\epsilon_k = \tilde{y}_k^\top S_k^{-1} \tilde{y}_k$ should follow a
@@ -181,9 +181,3 @@ incorrect noise tuning.
 
 [1] D. Simon, "Optimal State Estimation: Kalman, H-Infinity, and Nonlinear
 Approaches," Wiley, 2006.
-
-[2] S. Sarkka and L. Svensson, "Bayesian Filtering and Smoothing," 2nd ed.,
-Cambridge University Press, 2023.
-
-[3] S. Thrun, W. Burgard, and D. Fox, "Probabilistic Robotics," MIT Press,
-2006.

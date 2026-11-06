@@ -13,10 +13,10 @@ class double_s_rest_to_rest : protected double_s_state<Scalar>
 protected:
     using double_s_state<Scalar>::double_s_state;
 
-    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4.3, p.90-93
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 3.4.3, p.90-93
     void compute_zero_bc(Scalar h, Scalar v_max, Scalar a_max, Scalar j_max)
     {
-        // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4.3, Case 1, p.92
+        // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 3.4.3, Case 1, p.92
         bool const a_max_reached = (v_max * j_max >= a_max * a_max);
         auto const ramp = make_velocity_ramp(v_max, a_max, j_max);
         // The cruise is decided on the distance the cruise-free profile at v_max lacks, the c that forms its peak's deficit.
@@ -47,7 +47,7 @@ protected:
         this->m_degenerate = !a_max_reached;
     }
 
-    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4.3, Case 2, p.92-93
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 3.4.3, Case 2, p.92-93
     void set_zero_bc_no_cruise(Scalar c, Scalar h, Scalar v_max, Scalar a_max, Scalar j_max, bool a_max_reached)
     {
         this->m_degenerate = true;
@@ -74,7 +74,7 @@ protected:
         }
     }
 
-    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4.3, Case 2.b, p.93
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 3.4.3, Case 2.b, p.93
     void solve_doubly_degenerate(Scalar h, Scalar a_max, Scalar j_max)
     {
         auto const T_j = doubly_degenerate_jerk_time(h, this->m_v_max, a_max, j_max);

@@ -64,7 +64,7 @@ protected:
     {
     }
 
-    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4, p.79
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 3.4, p.79
     template <typename Config>
     static ctrlpp::expected<void, trajectory_error> check_limits(Config const& requested)
     {

@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_TRAJECTORY_DETAIL_SMOOTHING_SPLINE_SOLVE_H
 
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
-// Automatic Machines and Robots", 2009, Sec. 4.4.5
+// Automatic Machines and Robots", 2008, Sec. 4.4.5
 
 #include "ctrlpp/trajectory/detail/spline_checks.h"
 

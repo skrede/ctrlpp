@@ -1,7 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_TRAJECTORY_ONLINE_PLANNER_3RD_H
 #define HPP_GUARD_CTRLPP_TRAJECTORY_ONLINE_PLANNER_3RD_H
 
-// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 4.6.1
+// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 4.6.1
 // @cite lambrechts2005 -- Lambrechts, Boerlage & Steinbuch, "Trajectory Planning and Feedforward Design for Electromechanical Motion Systems", Control Engineering Practice 13(2), 2005
 
 #include "ctrlpp/trajectory/trajectory_types.h"
@@ -75,7 +75,7 @@ public:
         return {};
     }
 
-    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.4.1, eq. (3.30a)-(3.30g), p.88-89
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2008, Sec. 3.4.1, eq. (3.30a)-(3.30g), p.88-89
     trajectory_point<Scalar, 1> sample(Scalar t) const
     {
         auto const dt = std::max(t - this->m_t_ref, Scalar{0});

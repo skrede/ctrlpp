@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_TRAJECTORY_DETAIL_POLYNOMIAL_EVAL_H
 
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
-// Machines and Robots", 2009, Sec. 2.1, eq. (2.7), p.31; App. A.4, p.463-464
+// Machines and Robots", 2008, Sec. 2.1, eq. (2.7), p.31; App. A.4, p.463-464
 
 #include "ctrlpp/types.h"
 

@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_TRAJECTORY_PIECEWISE_TRAJECTORY_H
 
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
-// Machines and Robots", 2009, Ch. 3, Sec. 3.6, p.117-119
+// Machines and Robots", 2008, Ch. 3, Sec. 3.6, p.117-119
 
 #include "ctrlpp/trajectory/cubic_trajectory.h"
 #include "ctrlpp/trajectory/trajectory_types.h"

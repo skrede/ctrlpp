@@ -7,7 +7,7 @@ industrial machines and robots [1, Ch. 1, pp. 1--12].
 
 This page covers point-to-point motion planning, velocity profiles, polynomial
 trajectories, spline interpolation, and online trajectory generation. The
-primary reference is Biagiotti and Melchiorri (2009) [1], which provides a
+primary reference is Biagiotti and Melchiorri (2008) [1], which provides a
 comprehensive treatment of trajectory planning for automatic machines.
 
 ## Point-to-Point Motion
@@ -236,7 +236,7 @@ unchanged.
 ## References
 
 [1] L. Biagiotti and C. Melchiorri, "Trajectory Planning for Automatic
-Machines and Robots," Springer, 2009.
+Machines and Robots," Springer, 2008.
 
 [2] N. S. Nise, "Control Systems Engineering," 7th ed., Wiley, 2015.
 
