@@ -56,7 +56,7 @@ public:
 
     Scalar duration() const { return m_T; }
 
-    // @cite biagiotti2009 -- Sec. 3.8, p.125
+    // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.8, p.126-127
     Scalar peak_velocity() const
     {
         constexpr auto pi = std::numbers::pi_v<Scalar>;
@@ -72,7 +72,7 @@ private:
     void eval_normalized(Scalar tau, Scalar& q_norm, Scalar& v_norm, Scalar& a_norm) const
     {
         constexpr auto pi = std::numbers::pi_v<Scalar>;
-        // @cite biagiotti2009 -- Sec. 3.8, p.125
+        // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 3.8, p.126
         auto const A = pi / (pi + Scalar{4});
 
         if(tau < Scalar{1} / Scalar{8})

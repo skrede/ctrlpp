@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_TRAJECTORY_SEPTIC_TRAJECTORY_H
 
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
-// Machines and Robots", 2009, Sec. 2.1.6, eq. (2.6), p.29
+// Machines and Robots", 2009, Sec. 2.1.6, eq. (2.6), p.28-29
 
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/trajectory_segment.h"
@@ -19,7 +19,7 @@
 namespace ctrlpp
 {
 
-// @cite biagiotti2009 -- Sec. 2.1.6, eq. (2.6), p.29: eight-coefficient septic in normalized time
+// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 2.1.6, eq. (2.6), p.28
 template <typename Scalar, std::size_t ND>
 struct septic_trajectory
 {
@@ -40,7 +40,7 @@ struct septic_trajectory
     Scalar duration() const { return dur; }
 };
 
-// @cite biagiotti2009 -- Sec. 2.1.6, eq. (2.6), p.29: coefficient derivation from 8 BCs; c4-c7 from the BC linear system
+// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 2.1.6, p.29
 template <typename Scalar, int Rows>
 ctrlpp::expected<septic_trajectory<Scalar, static_cast<std::size_t>(Rows)>, trajectory_error> make_septic_trajectory(Eigen::Matrix<Scalar, Rows, 1> const& q0,
         Eigen::Matrix<Scalar, Rows, 1> const& q1, Eigen::Matrix<Scalar, Rows, 1> const& v0, Eigen::Matrix<Scalar, Rows, 1> const& v1, Eigen::Matrix<Scalar, Rows, 1> const& a0,

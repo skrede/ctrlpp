@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_TRAJECTORY_CYCLOIDAL_PATH_H
 
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
-// Machines and Robots", 2009, Sec. 2.2.2, eq. (2.22), p.44; p.235
+// Machines and Robots", 2009, Sec. 2.2.2, eq. (2.22), p.43-44; p.235
 
 #include "ctrlpp/trajectory/trajectory_types.h"
 
@@ -13,7 +13,7 @@
 namespace ctrlpp
 {
 
-// @cite biagiotti2009 -- Sec. 2.2.2, eq. (2.22), p.44
+// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 2.2.2, eq. (2.22), p.43-44
 template <typename Scalar>
 path_point<Scalar> cycloidal_path(Scalar tau)
 {
