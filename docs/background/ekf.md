@@ -4,7 +4,7 @@ The Extended Kalman Filter (EKF) extends the linear Kalman filter to nonlinear
 systems by linearizing the dynamics and measurement models around the current
 state estimate at each time step. It is the most widely used nonlinear state
 estimator due to its simplicity and efficiency for mildly nonlinear systems
-[1, Ch. 13, pp. 393--420].
+[1, Ch. 13, p. 396].
 
 The EKF was developed in the 1960s for aerospace navigation and remains the
 workhorse estimator in many applications including GPS, inertial navigation,
@@ -13,7 +13,7 @@ and robotic localization.
 ## Nonlinear System Model
 
 The EKF addresses discrete nonlinear systems of the form
-[1, Sec. 13.1, pp. 394--396]:
+[1, Sec. 13.2.3, Eq. (13.38), p. 407]:
 
 $$
 x_{k+1} = f(x_k, u_k) + w_k, \qquad w_k \sim \mathcal{N}(0, Q)
@@ -33,7 +33,7 @@ are no longer Gaussian in general.
 
 The EKF approximates the nonlinear functions by their first-order Taylor
 series expansions around the current estimate. The Jacobian matrices are
-evaluated at each time step [1, Sec. 13.1, pp. 397--399]:
+evaluated at each time step [1, Sec. 13.2.3, Eqs. (13.46) and (13.48), p. 409]:
 
 $$
 F_k = \left. \frac{\partial f}{\partial x} \right|_{\hat{x}_{k|k}, u_k} \in \mathbb{R}^{n \times n}
@@ -50,7 +50,7 @@ how well the first-order approximation captures the true nonlinearity.
 ## EKF Prediction
 
 The state prediction uses the full nonlinear model, while the covariance
-prediction uses the linearized dynamics [1, Sec. 13.2, pp. 400--403]:
+prediction uses the linearized dynamics [1, Sec. 13.2.3, Eq. (13.47), p. 409]:
 
 $$
 \hat{x}_{k+1|k} = f(\hat{x}_{k|k}, u_k)
@@ -68,7 +68,7 @@ Jacobian approximation.
 
 The measurement update follows the standard Kalman structure with the
 nonlinear measurement function and its Jacobian
-[1, Sec. 13.2, pp. 403--405]:
+[1, Sec. 13.2.3, Eq. (13.49), p. 409]:
 
 $$
 \tilde{y}_k = z_k - h(\hat{x}_{k|k-1})
@@ -108,7 +108,6 @@ The EKF requires Jacobians at every time step. Two approaches exist:
 The user provides closed-form expressions for $F_k$ and $H_k$. This is the
 most efficient approach when the derivatives are tractable. For example,
 if $f(x) = [x_1 x_2, \; x_1 + x_2^2]^\top$, then
-[1, Sec. 13.3, pp. 406--408]:
 
 $$
 F = \begin{bmatrix} x_2 & x_1 \\ 1 & 2 x_2 \end{bmatrix}
@@ -117,7 +116,7 @@ $$
 ### Numerical Jacobians
 
 When analytical derivatives are unavailable or impractical, finite-difference
-approximations compute the Jacobians [1, Sec. 13.3, pp. 408--410]:
+approximations compute the Jacobians:
 
 $$
 F_{ij} \approx \frac{f_i(x + \delta e_j) - f_i(x - \delta e_j)}{2\delta}
@@ -134,7 +133,7 @@ rounding error. The factor $\epsilon^{1/3}$ is `ekf_config::numerical_eps`.
 ## Limitations
 
 The EKF has several well-known limitations
-[1, Sec. 13.4, pp. 411--415]:
+[1, Sec. 13.5, p. 425; Ch. 14, p. 433]:
 
 1. **First-order accuracy**: the linearization captures only the first
    derivative, introducing errors proportional to the neglected higher-order
@@ -155,7 +154,7 @@ The EKF has several well-known limitations
 
 The iterated EKF (IEKF) re-linearizes the measurement model around the
 updated state estimate and repeats the update step until convergence
-[1, Sec. 13.5, pp. 416--418]. This is equivalent to performing a
+[1, Sec. 13.3.1, pp. 410--413]. This is equivalent to performing a
 Gauss-Newton optimization on the measurement update and can improve
 accuracy for strongly nonlinear measurement functions. ctrlpp's `ekf` does not
 iterate: it linearizes the measurement once per update.

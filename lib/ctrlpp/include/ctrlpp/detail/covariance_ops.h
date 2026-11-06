@@ -1,9 +1,9 @@
 #ifndef HPP_GUARD_CTRLPP_DETAIL_COVARIANCE_OPS_H
 #define HPP_GUARD_CTRLPP_DETAIL_COVARIANCE_OPS_H
 
-// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 5 (covariance conditioning / Joseph form)
+// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Sec. 5.5, p. 140
 // @cite higham1988 -- Higham, "Computing a nearest symmetric positive semidefinite matrix", Linear Algebra Appl. 103, 1988
-// @cite higham2002 -- Higham, "Accuracy and Stability of Numerical Algorithms", 2nd ed., 2002, Sec. 2.1 and 3.1
+// @cite higham2002 -- Higham, "Accuracy and Stability of Numerical Algorithms", 2nd ed., 2002, Sec. 2.12, Eq. (2.8), and Sec. 3.1
 // @cite golub2013 -- Golub & Van Loan, "Matrix Computations", 4th ed., 2013, Sec. 8.1 (symmetric eigenvalue perturbation)
 
 #include <Eigen/Core>
@@ -22,7 +22,7 @@ namespace ctrlpp::detail
 // n-term inner product carries at most gamma_n, about n u, of its scale (@cite higham2002, Sec. 3.1);
 // `factor` is the order-one prefactor left to the caller. The absolute term is the gradual-underflow
 // part of the standard model, fl(x op y) = (x op y)(1 + delta) + eta with |eta| <= denorm_min / 2
-// (@cite higham2002, Sec. 2.1): without it the bound collapses to zero below
+// (@cite higham2002, Sec. 2.12, Eq. (2.8)): without it the bound collapses to zero below
 // scale = denorm_min / (factor eps), and at and above that scale the bound is the relative term exactly.
 template <typename Scalar>
 inline Scalar rounding_bound(std::int32_t count, Scalar scale, Scalar factor)

@@ -37,7 +37,7 @@ $\mathbb{E}\bigl[\lVert x_k - \hat{x}_k \rVert^2\bigr]$.
 ## Prediction Step
 
 The prediction propagates the state estimate and error covariance forward
-through the system dynamics [1, Sec. 5.2, pp. 128--130]:
+through the system dynamics [1, Sec. 5.1, Eqs. (5.11) and (5.14), pp. 126--127]:
 
 $$
 \hat{x}_{k|k-1} = A \, \hat{x}_{k-1|k-1} + B \, u_{k-1}
@@ -53,7 +53,7 @@ increased uncertainty about the state between measurements.
 ## Update (Correction) Step
 
 When a measurement $z_k$ arrives, the filter computes the innovation
-(measurement residual) [1, Sec. 5.2, pp. 130--133]:
+(measurement residual) [1, Sec. 5.1, Eq. (5.19), pp. 128--129]:
 
 $$
 \tilde{y}_k = z_k - C \, \hat{x}_{k|k-1}
@@ -85,7 +85,7 @@ $$
 
 The standard covariance update $P_{k|k} = (I - K_k C) P_{k|k-1}$ is
 numerically sensitive. The Joseph form provides guaranteed symmetry and
-positive semi-definiteness [1, Sec. 5.4, pp. 139--140]:
+positive semi-definiteness [1, Sec. 5.1, Eq. (5.19), p. 129]:
 
 $$
 P_{k|k} = (I - K_k C) \, P_{k|k-1} \, (I - K_k C)^\top + K_k \, R \, K_k^\top
@@ -99,7 +99,7 @@ symmetrizes the result.
 ## Optimality Properties
 
 For linear systems with Gaussian noise, the Kalman filter is
-[1, Sec. 5.3, pp. 134--138]:
+[1, Sec. 5.2, pp. 129--130]:
 
 - **Minimum variance**: no other linear unbiased estimator achieves smaller
   estimation error covariance.
@@ -115,7 +115,7 @@ estimator (BLUE), though nonlinear estimators may perform better.
 
 For time-invariant systems, the error covariance $P$ converges to a
 steady-state value $P_\infty$ that satisfies the discrete algebraic Riccati
-equation (DARE) [1, Sec. 5.5, pp. 141--145]:
+equation (DARE) [1, Sec. 7.3, Eqs. (7.42)--(7.43), pp. 194--195]:
 
 $$
 P_\infty = A \, P_\infty \, A^\top - A \, P_\infty \, C^\top (C \, P_\infty \, C^\top + R)^{-1} C \, P_\infty \, A^\top + Q
@@ -129,7 +129,7 @@ $$
 
 This allows precomputing the gain, reducing the online computation to a
 matrix-vector multiply. Convergence requires the system to be detectable
-(all unstable modes are observable) [1, Sec. 5.5, p. 143]. ctrlpp's
+(all unstable modes are observable) [1, Sec. 7.3, Theorem 23, p. 196]. ctrlpp's
 `kalman_filter` always runs the time-varying recursion above;
 `is_steady_state()` reports when successive covariances have stopped changing.
 
@@ -137,7 +137,7 @@ matrix-vector multiply. Convergence requires the system to be detectable
 
 The performance of the Kalman filter depends critically on the choice of
 process noise covariance $Q$ and measurement noise covariance $R$
-[1, Sec. 5.6, pp. 146--148]:
+[1, Sec. 5.5, pp. 141--144]:
 
 - **$Q$ too small**: the filter trusts the model too much and responds slowly
   to actual disturbances.
@@ -154,7 +154,7 @@ tuning based on the expected magnitude of model uncertainty and disturbances.
 The Kalman filter can reconstruct the whole state only if the system is
 observable &mdash; that is, the state can be uniquely determined from a finite
 sequence of measurements; detectability, as above, is what the convergence of
-the error covariance requires. The observability matrix [3, Sec. 12.3, pp. 683--690]:
+the error covariance requires. The observability matrix [3, Sec. 12.6, Eq. (12.79), p. 675]:
 
 $$
 \mathcal{O} = \begin{bmatrix} C \\ CA \\ CA^2 \\ \vdots \\ CA^{n-1} \end{bmatrix}

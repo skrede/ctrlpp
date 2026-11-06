@@ -17,7 +17,7 @@ where Jacobians are expensive or unavailable.
 The unscented transform (UT) is the core mechanism of the UKF. Given a
 random variable $x \in \mathbb{R}^n$ with mean $\hat{x}$ and covariance $P$,
 the UT approximates the statistics of $y = g(x)$ for an arbitrary nonlinear
-function $g$ [2, Sec. III, pp. 404--408].
+function $g$ [2, Sec. III, pp. 404--406].
 
 ### Sigma-Point Generation
 
@@ -67,7 +67,7 @@ The three parameters control the sigma-point distribution
   $\beta = 2$ is optimal for Gaussian distributions.
 - **$\kappa$**: secondary scaling parameter. A common choice is
   $\kappa = 3 - n$ to match the fourth moment of the Gaussian
-  [2, Sec. IV, p. 410].
+  [2, App. II, p. 419].
 
 ctrlpp's `merwe_sigma_points` defaults to $\alpha = 10^{-3}$, $\beta = 2$,
 $\kappa = 0$, which make $W_0^{(m)}$ and $W_0^{(c)}$ about $-10^6$; the
@@ -84,13 +84,14 @@ Given sigma points $\mathcal{X}_i$ and a nonlinear function $g$
 4. **Cross-covariance**: $P_{xy} = \sum_{i=0}^{2n} W_i^{(c)} (\mathcal{X}_i - \hat{x})(\mathcal{Y}_i - \bar{y})^\top$
 
 This captures the mean and covariance accurately to second order for any
-nonlinearity, and to third order for Gaussian inputs [2, Sec. V, p. 412].
+nonlinearity, and to third order for Gaussian inputs [2, Sec. III-A, p. 406;
+Sec. IV-B, p. 409].
 
 ## UKF Algorithm
 
 The UKF applies the unscented transform twice per time step: once for
 prediction and once for the measurement update
-[1, Sec. 14.3, pp. 442--448].
+[1, Sec. 14.3, pp. 447--452].
 
 ### Prediction
 
@@ -176,7 +177,7 @@ This is the most widely used variant [3, Sec. 7.2].
 ### Julier (Original)
 
 The original unscented transform uses a single parameter $\kappa$, with
-$\alpha = 1$ and $\beta = 0$ implicitly [2, Sec. III]. Simpler but less
+$\alpha = 1$ and $\beta = 0$ implicitly [2, Sec. IV-A, Eq. (12), p. 406]. Simpler but less
 flexible. The zeroth sigma point has weight $\kappa / (n + \kappa)$, which is
 negative whenever $\kappa < 0$, as the choice $\kappa = 3 - n$ gives for
 $n > 3$.
@@ -196,7 +197,7 @@ $n > 3$.
 For mildly nonlinear systems where analytical Jacobians are available, the EKF
 is typically sufficient and more efficient. For strongly nonlinear systems or
 when Jacobians are expensive to derive, the UKF is preferred
-[1, Sec. 14.5, pp. 455--459].
+[1, Sec. 14.5, p. 457].
 
 ## References
 

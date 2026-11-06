@@ -4,7 +4,7 @@ A state observer reconstructs the internal state of a dynamic system from
 its measured inputs and outputs. When only a subset of the state variables
 can be measured directly, observers provide estimates of the full state vector
 for use in state-feedback control laws such as LQR
-[1, Sec. 12.5, pp. 685--700].
+[1, Sec. 12.5, p. 667].
 
 The observer concept was introduced by Luenberger in 1964 and formalized in
 his 1971 paper [2], establishing a deterministic dual to the Kalman filter.
@@ -12,7 +12,7 @@ his 1971 paper [2], establishing a deterministic dual to the Kalman filter.
 ## The Observation Problem
 
 Given a discrete linear time-invariant system
-[1, Sec. 12.5, pp. 685--688]:
+[5, Sec. 4.4, Eq. (4.23), p. 135]:
 
 $$
 x_{k+1} = A \, x_k + B \, u_k
@@ -32,7 +32,7 @@ $\{y_k\}$.
 
 The Luenberger observer augments a copy of the system model with a correction
 term driven by the output estimation error
-[1, Sec. 12.5, pp. 688--692]:
+[5, Sec. 4.4, Eqs. (4.28)--(4.30), pp. 137--138]:
 
 $$
 \hat{x}_{k+1} = A \, \hat{x}_k + B \, u_k + L \, (y_k - C \, \hat{x}_k)
@@ -67,7 +67,7 @@ poles)`.
 ## Observability
 
 The observer can reconstruct the full state only if the system is observable.
-The observability matrix [1, Sec. 12.3, pp. 683--685]:
+The observability matrix [1, Sec. 12.6, Eq. (12.79), p. 675]:
 
 $$
 \mathcal{O} = \begin{bmatrix} C \\ CA \\ CA^2 \\ \vdots \\ CA^{n-1} \end{bmatrix}
@@ -82,18 +82,18 @@ according to the open-loop dynamics and cannot be influenced by the observer.
 A weaker condition than full observability is detectability: all unobservable
 modes must be stable (eigenvalues inside the unit circle). This is sufficient
 for the observer error to converge, since the unobservable modes decay
-naturally [1, Sec. 12.5, p. 690].
+naturally [5, Sec. 3.4, Definition 3.10, p. 99].
 
 ## Observer Pole Placement
 
 The observer gain $L$ is chosen to place the eigenvalues of $(A - LC)$ at
 desired locations. This is the dual of the state-feedback pole placement
-problem [1, Sec. 12.5, pp. 692--696].
+problem [5, Sec. 4.4, pp. 138--139].
 
 ### Ackermann's Formula
 
 For single-output systems ($m = 1$), Ackermann's formula provides a direct
-computation [1, Sec. 12.5, pp. 693--694]:
+computation [5, Sec. 4.4, Eq. (4.31), p. 139]:
 
 $$
 L = \alpha_d(A) \, \mathcal{O}^{-1} \begin{bmatrix} 0 \\ 0 \\ \vdots \\ 1 \end{bmatrix}
@@ -113,16 +113,18 @@ Ackermann's formula only and refuses a system with more than one output.
 ## Observer Design Guidelines
 
 The choice of observer poles involves a trade-off
-[1, Sec. 12.5, pp. 696--698]:
+[5, Sec. 4.4, pp. 138--139]:
 
 - **Fast poles** (close to origin): rapid convergence but high sensitivity to
   measurement noise and modeling errors.
 - **Slow poles** (close to unit circle): smooth estimates but slow tracking
   of actual state changes.
 
-A common heuristic is to place observer poles 2--6 times faster than the
-closed-loop controller poles [1, Sec. 12.5, p. 697]. This ensures the
-observer converges before the controller needs accurate state information.
+A common choice is an observer response faster than the controlled
+closed-loop response [1, Sec. 12.5, p. 670]: ten times faster in Nise's
+examples [1, Sec. 12.5, p. 671], twice as fast in the design example of
+Astrom and Wittenmark [5, Sec. 4.7, p. 159]. This ensures the observer
+converges before the controller needs accurate state information.
 
 ## Separation Principle
 
@@ -130,7 +132,7 @@ The separation principle states that the state-feedback gain $K$ and the
 observer gain $L$ can be designed independently: the closed-loop eigenvalues
 of the combined controller-observer system are the union of the controller
 eigenvalues and the observer eigenvalues
-[1, Sec. 12.6, pp. 699--704].
+[5, Sec. 4.5, Eq. (4.36), pp. 142--143].
 
 This means:
 
@@ -148,7 +150,8 @@ systems but does not extend to nonlinear systems in general.
 The Kalman filter is a stochastic observer that computes the gain $L = K_k$
 (the Kalman gain) optimally from noise statistics $(Q, R)$. The Luenberger
 observer is its deterministic counterpart where $L$ is chosen by pole
-placement rather than optimization [1, Sec. 12.7, pp. 705--708].
+placement rather than optimization [5, Sec. 11.3, Eqs. (11.43)--(11.44),
+pp. 429--430].
 
 When the noise covariances are known, the Kalman filter is preferred. When
 they are unknown or the designer wants direct control over convergence speed,
@@ -160,7 +163,7 @@ A full-order observer estimates all $n$ states, including those that are
 directly measured. A reduced-order (Luenberger) observer estimates only the
 $n - m$ unmeasured states, using the measured outputs directly. This reduces
 computation but increases design complexity
-[1, Sec. 12.5, pp. 698--699]. ctrlpp provides only the full-order observer.
+[5, Sec. 4.4, pp. 140--141]. ctrlpp provides only the full-order observer.
 
 ## References
 
@@ -175,3 +178,6 @@ pp. 1129--1155, 1985.
 
 [4] D. Simon, "Optimal State Estimation: Kalman, H-Infinity, and Nonlinear
 Approaches," Wiley, 2006.
+
+[5] K. J. Astrom and B. Wittenmark, "Computer-Controlled Systems: Theory and
+Design," 3rd ed., Prentice Hall, 1997.

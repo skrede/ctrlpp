@@ -78,6 +78,7 @@ protected:
     void apply_state_correction(const Eigen::Matrix<Scalar, nx, ny>& K) { m_x = (m_x + K * m_innovation).eval(); }
 
     // Joseph form, symmetrized.
+    // @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Sec. 5.1, Eq. (5.19), p. 129
     void update_covariance(const Eigen::Matrix<Scalar, nx, ny>& K)
     {
         cov_matrix_t IKC = cov_matrix_t::Identity() - K * m_sys.C;

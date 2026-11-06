@@ -58,7 +58,7 @@ protected:
 
     void propagate_state(const state_vector_t& x_prev, const input_vector_t& u) { m_x = m_dynamics(x_prev, u); }
 
-    // @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13, Eq. 13.1
+    // @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Sec. 13.2.3, Eq. (13.47), p. 409
     void propagate_covariance(const state_vector_t& x_prev, const input_vector_t& u)
     {
         Matrix<Scalar, NX, NX> F;
@@ -78,10 +78,10 @@ protected:
             return detail::numerical_jacobian_h<Scalar, NX, NY>(m_measurement, m_x, m_eps);
     }
 
-    // @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13, Eq. 13.2
+    // @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Sec. 13.2.3, Eq. (13.49), p. 409
     meas_cov_matrix_t compute_innovation_covariance(const Matrix<Scalar, NY, NX>& H) const { return (H * m_P * H.transpose() + m_R).eval(); }
 
-    // @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13, Eq. 13.2
+    // @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Sec. 13.2.3, Eq. (13.49), p. 409
     Eigen::Matrix<Scalar, nx, ny> compute_kalman_gain(const Matrix<Scalar, NY, NX>& H, const meas_cov_matrix_t& S) const
     {
         if constexpr(ny == 1)
@@ -96,7 +96,7 @@ protected:
     void apply_state_correction(const Eigen::Matrix<Scalar, nx, ny>& K, const output_vector_t& /*z*/, const output_vector_t& /*z_pred*/) { m_x = (m_x + K * m_innovation).eval(); }
 
     // Joseph form, symmetrized.
-    // @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13, Eq. 13.3
+    // @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Sec. 13.2.3, Eq. (13.49), p. 409; Sec. 5.1, Eq. (5.19), p. 129
     void update_covariance(const Eigen::Matrix<Scalar, nx, ny>& K, const Matrix<Scalar, NY, NX>& H)
     {
         cov_matrix_t IKH = cov_matrix_t::Identity() - K * H;
