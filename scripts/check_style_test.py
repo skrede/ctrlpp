@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 
 import style_rules_text
+import style_rules_constants
 from style_source import Source, blank
 
 LINT = Path(__file__).resolve().parent / "check_style.py"
@@ -326,6 +327,38 @@ CALL_CASES = [
 ]
 
 
+CONSTANT_CASES = [
+    ("a Hungarian-prefixed namespace constant fails",
+     lib("x.h", "namespace ctrlpp\n{\ninline constexpr std::int32_t kSteps = 1;\n}\n"), 20,
+     ("x.h:6: constant-naming: ctrlpp::kSteps: a constant is lowercase with underscores (a Hungarian k prefix)",)),
+    ("a camel-case namespace constant fails", lib("x.h", "constexpr double goldenDt = 0.02;\n"), 20,
+     ("goldenDt: a constant is lowercase with underscores (a camel-case hump)",)),
+    ("a PascalCase static constexpr member fails",
+     lib("x.h", "namespace ctrlpp\n{\nclass probe\n{\n    static constexpr int MaxPhases = 11;\n};\n}\n"), 20,
+     ("ctrlpp::probe::MaxPhases: a constant is lowercase with underscores (a camel-case hump)",)),
+    ("a camel-case constexpr local fails",
+     lib("x.h", "namespace ctrlpp\n{\ninline int f()\n{\n    if(true)\n    {\n        constexpr int stepCount = 3;\n"
+                "        return stepCount;\n    }\n    return 0;\n}\n}\n"), 20, ("ctrlpp::f::stepCount",)),
+    ("a const namespace constant and a variable template are constants",
+     lib("x.h", "const double kGain = 1.0;\ntemplate <typename T>\ninline constexpr T kPi = T(3);\n"), 20,
+     ("x.h:4: constant-naming: kGain:", "x.h:6: constant-naming: kPi:")),
+    ("snake-case constants pass",
+     lib("x.h", "constexpr double golden_dt = 0.02;\nconstexpr double k2 = 0.5;\nclass probe\n{\n    static constexpr "
+                "std::size_t max_phases = 11;\n};\ninline int f()\n{\n    constexpr int steps = 3;\n    return steps;\n"
+                "}\nnamespace golden\n{\ninline constexpr int sample_count = 4;\n}\n"), 0, ("no findings",)),
+    ("dimension, mathematical and subscripted symbols pass",
+     lib("x.h", "class probe\n{\n    static constexpr std::size_t NE = 3;\n    static constexpr int Ni = 2;\n};\n"
+                "constexpr int NX = 2;\nconstexpr int NY_OBS = 1;\nconstexpr double M_cart = 1.0;\nconstexpr double J = 0.1;\n"),
+     0, ("no findings",)),
+    ("the ESP-IDF logging tag passes",
+     {ESP + "app_main.cpp": 'namespace\n{\nconstexpr const char* TAG = "x";\n}\n'}, 0, ("no findings",)),
+    ("variables, pointers to const and const locals are not constants",
+     lib("x.h", "int kCount = 0;\nconst char* kName = nullptr;\nclass probe\n{\n    static int sharedCount;\n"
+                "    const int m_fixedSize;\n};\ninline double f(double T)\n{\n    auto const dT = T / 2;\n"
+                "    return dT;\n}\n"), 0, ("no findings",)),
+]
+
+
 def check(label: str, code: int, output: str, want_code: int, want_text: str) -> bool:
     if code == want_code and want_text in output:
         return True
@@ -379,7 +412,8 @@ def run_cli(root: Path) -> int:
     failures += not check("a given path that cannot be read", *run_lint(case, LIB + "gone.h"), 6, "cannot read")
     failures += not check("--list-rules names every rule and its code", *run_lint(case, "--list-rules"), 0,
                           "include-order 10\nattributes 11\nreturn-type 12\nmember-init 13\nmember-naming 14\n"
-                          "pragma-once 15\nguard 16\nclosing-comment 17\nspelling 18\ndiscarded-result 19\n")
+                          "pragma-once 15\nguard 16\nclosing-comment 17\nspelling 18\ndiscarded-result 19\n"
+                          "constant-naming 20\n")
     empty = root / "empty"
     empty.mkdir()
     build(empty, {})
@@ -396,11 +430,22 @@ def run_in_process() -> int:
     style_rules_text.ALLOWED_PHRASES = (("Optimisation in Practice", "a cited title"),)
     found = style_rules_text.check_spelling(Source("examples/x.cpp", "// see Optimisation in Practice\n", "", frozenset()))
     style_rules_text.ALLOWED_PHRASES = ()
-    return failures + (not check("an allowed quoted title passes", 0, str(found), 0, "[]"))
+    failures += not check("an allowed quoted title passes", 0, str(found), 0, "[]")
+    return failures + run_constant_carve_out()
+
+
+def run_constant_carve_out() -> int:
+    text = "constexpr const char* logTag = nullptr;\n"
+    saved, style_rules_constants.CARVE_OUTS = style_rules_constants.CARVE_OUTS, (("examples/a/", re.compile("logTag")),)
+    inside = style_rules_constants.check_constant_naming(Source("examples/a/x.cpp", text, blank(text), frozenset()))
+    outside = style_rules_constants.check_constant_naming(Source("examples/b/x.cpp", text, blank(text), frozenset()))
+    style_rules_constants.CARVE_OUTS = saved
+    failures = not check("a carved-out constant passes under its path prefix", 0, str(inside), 0, "[]")
+    return failures + (not check("a carve-out holds only under its path prefix", 0, str(outside), 0, "logTag"))
 
 
 STRUCTURAL = (("member-naming", NAMING_CASES), ("member-init", INIT_CASES), ("return-type", RETURN_CASES),
-              ("discarded-result", CALL_CASES))
+              ("discarded-result", CALL_CASES), ("constant-naming", CONSTANT_CASES))
 
 
 def main() -> int:
@@ -414,7 +459,7 @@ def main() -> int:
         for rule, cases in STRUCTURAL:
             failures += run_rule_cases(root, rule, cases)
         failures += run_list_members(root)
-    total = sum(len(cases) for cases in groups) + 5 + 4 + sum(len(cases) for _, cases in STRUCTURAL) + 3
+    total = sum(len(cases) for cases in groups) + 5 + 6 + sum(len(cases) for _, cases in STRUCTURAL) + 3
     if failures:
         print(f"{failures} of {total} cases failed")
         return 1

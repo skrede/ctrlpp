@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prove that every style-lint rule is able to fail: a probe header that passes all ten rules is planted
+# Prove that every style-lint rule is able to fail: a probe header that passes all eleven rules is planted
 # into a throwaway copy of the tree, then rewritten with one violation per rule, and each rewrite must
 # fail that rule with its own exit code.
 #
@@ -133,6 +133,8 @@ plant spelling 18 "British spelling in a comment" 'struct probe_config' $'// the
 plant discarded-result 19 "a bare call to a fallible function" \
     '    std::int32_t const result = style_lint_probe::create(value);' \
     $'    style_lint_probe::create(value);\n    std::int32_t const result = value;'
+plant constant-naming 20 "a Hungarian-prefixed namespace constant" \
+    $'namespace ctrlpp\n{\n' $'namespace ctrlpp\n{\n\ninline constexpr std::int32_t kProbe = 1;\n'
 
 if [ "$(git status --porcelain)" = "$before" ]; then
     pass "the real working tree is unchanged"

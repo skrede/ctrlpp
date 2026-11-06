@@ -153,7 +153,14 @@ kept by hand.
   (`NX`, `NU`, `NY`).
 - Private and protected data members take an `m_` prefix (`m_state`, `m_updates_since_reset`). No name ends
   in a trailing underscore. The public fields of an aggregate take no prefix.
-- `static constexpr` members are plain snake_case (`max_phases`), without `m_`.
+- Constants are lowercase snake_case: namespace-scope `constexpr` and `const` constants, `static constexpr`
+  members and `constexpr` locals alike (`max_phases`, never `kMaxPhases` or `maxPhases`). A `static
+  constexpr` member takes no `m_`. A set of related namespace-scope constants whose plain names would
+  collide with or shadow ordinary names is grouped in a namespace named for the set, as `std::numbers` is
+  (`golden::dt`). Never a `g_` prefix, and never ALL_CAPS, which the C++ Core Guidelines (ES.9) reserve for
+  macros. A dimension or mathematical symbol keeps its uppercase form (`NX`, `NE`, `Ni`, `M_cart`), as
+  dimension parameters do, and so does the file-scope `TAG` that ESP-IDF's logging macros take. The style
+  lint flags the `k` prefix and camel-case humps; review holds the rest.
 - A member holding a callback or hook (a `std::function`, a `std::move_only_function`) takes a `_cb`
   suffix, whether it is a private member (`m_feed_forward_cb`) or a public field of an API type
   (`cost_cb`). Callbacks are grouped together; the suffix marks injected behavior, not state.
@@ -279,9 +286,10 @@ from `git ls-files`.
 - **The style lint.** `python3 scripts/check_style.py [--rule ID ...] [PATH ...]` lints the tracked C++
   files under `lib/` and `examples/`. It checks include order; attributes; `auto` and trailing return
   types; in-declaration member initializers outside the configuration exception; member naming (`m_`, no
-  trailing underscore, `_cb`); header guards and `#pragma once`; comments after a closing namespace brace
-  or the guard's `#endif`; and American spelling, which it also checks in the CMake files. It flags a
-  call made as a bare statement that discards a `ctrlpp::expected`, which no attribute guards.
+  trailing underscore, `_cb`); constant naming (no `k` prefix, no camel-case hump); header guards and
+  `#pragma once`; comments after a closing namespace brace or the guard's `#endif`; and American spelling,
+  which it also checks in the CMake files. It flags a call made as a bare statement that discards a
+  `ctrlpp::expected`, which no attribute guards.
 - **Source purity.** `bash scripts/source_purity_check.sh` holds the library and the examples to the
   error policy above.
 - **The doc snippet build.** `python3 scripts/check_doc_snippets.py [PATH ...]` compiles, syntax-only,

@@ -12,6 +12,7 @@ from typing import Callable, NamedTuple
 from style_rules_calls import check_discarded_result
 from style_rules_returns import check_return_type
 from style_rules_includes import check_include_order
+from style_rules_constants import check_constant_naming
 from style_source import Source, blank, in_cpp_scope, in_spelling_scope, tracked_files
 from style_rules_members import check_member_init, check_member_naming, list_members
 from style_rules_text import check_attributes, check_closing_comment, check_guard, check_pragma_once, check_spelling
@@ -37,6 +38,7 @@ RULES = {
     "closing-comment": Rule(17, check_closing_comment, in_cpp_scope),
     "spelling": Rule(18, check_spelling, in_spelling_scope),
     "discarded-result": Rule(19, check_discarded_result, in_cpp_scope),
+    "constant-naming": Rule(20, check_constant_naming, in_cpp_scope),
 }
 
 EXIT_HELP = "exit codes:\n  0  no findings\n" + "".join(

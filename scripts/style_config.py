@@ -96,6 +96,13 @@ CALLBACK_TYPE_PATTERNS = (
     r"[^()]*\(\s*\*\s*\w+\s*\)\s*\(",
 )
 
+# (path prefix, name pattern, reason): a constant whose name matches the pattern in a file under the prefix is not
+# held to the constant-naming rule.
+CONSTANT_CARVE_OUTS = (
+    ("examples/embedded/esp32/", r"TAG",
+     "ESP-IDF's logging macros take a file-scope TAG, and its examples and documentation name it so"),
+)
+
 CARVE_OUT_SUFFIXES = ("_config", "_options", "_settings")
 CARVE_OUT_NESTED = "config"
 
