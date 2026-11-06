@@ -9,17 +9,19 @@ Cubic polynomial trajectory segment with arbitrary velocity boundary conditions.
 
 ## Template Parameters
 
-| Parameter | Description |
-|-----------|-------------|
-| `Scalar` | Floating-point type |
-| `ND` | Number of dimensions (`std::size_t`) |
+| Parameter | Constraint | Description |
+|-----------|------------|-------------|
+| `Scalar` | none (`typename`) | Floating-point type; the factory tests it with `std::isfinite` |
+| `ND` | `std::size_t` | Number of dimensions, deduced by the factory from the rows of its fixed-size vector arguments |
 
 ## Struct Members
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `coeffs` | `std::array<Vector<Scalar, ND>, 4>` | Normalized polynomial coefficients `[c0, c1, c2, c3]` |
-| `dur` | `Scalar` | Segment duration in seconds |
+| `dur` | `Scalar` | Segment duration, in the caller's time unit |
+
+`cubic_trajectory` is a public aggregate. Built directly rather than through the factory, nothing checks it: `evaluate` clamps `t` to `[0, dur]` and divides by `dur`, so `dur` must be finite and strictly positive.
 
 ## Member Functions
 
@@ -44,7 +46,7 @@ make_cubic_trajectory(
 );
 ```
 
-Coefficients are computed in normalized time to prevent ill-conditioning.
+The coefficients are those of the polynomial in normalized time `tau = t/T`: with `h = q1 - q0`, `c0 = q0`, `c1 = v0*T`, `c2 = 3*h - T*(2*v0 + v1)`, `c3 = -2*h + T*(v0 + v1)`.
 
 The duration is a divisor (`evaluate` scales derivatives by `1/T`), so its exact domain is finite and strictly positive. Rejections, checked in order:
 

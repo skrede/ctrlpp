@@ -1,6 +1,6 @@
 # bspline_trajectory
 
-B-spline trajectory with compile-time degree and de Boor evaluation. Supports configurable degree (cubic = 3, quintic = 5, etc.), auto-generated uniform clamped knot vectors, and user-provided custom knot vectors. The factory function `make_bspline_interpolation()` solves for control points that pass through specified waypoints.
+Scalar B-spline trajectory with compile-time degree and de Boor evaluation. Supports configurable degree (cubic = 3, quintic = 5, etc.), auto-generated uniform clamped knot vectors, and user-provided custom knot vectors. The factory function `make_bspline_interpolation()` solves for control points that pass through specified waypoints.
 
 ## Header
 
@@ -12,8 +12,8 @@ B-spline trajectory with compile-time degree and de Boor evaluation. Supports co
 
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
-| `Scalar` | arithmetic type | Numeric type (`float`, `double`, `long double`) |
-| `Degree` | `int` | B-spline degree (e.g. 3 for cubic, 5 for quintic) |
+| `Scalar` | `ctrlpp_floating_scalar` | Floating-point type (`float`, `double`, `long double`) |
+| `Degree` | `int`, at least 1 (a `static_assert`) | B-spline degree (e.g. 3 for cubic, 5 for quintic) |
 
 ## Config
 
@@ -24,7 +24,7 @@ struct config {
 };
 ```
 
-If `knot_vector` is left empty, a uniform clamped knot vector is generated automatically with `m + 1 = n + Degree + 2` total knots.
+If `knot_vector` is left empty, a uniform clamped knot vector is generated automatically with `m + 1 = n + Degree + 2` total knots over `[0, 1]`: `Degree + 1` zeros, equally spaced interior knots, `Degree + 1` ones. The parameter then runs over `[0, 1]` and `duration()` is 1, whatever the number of control points; a time scale comes from a knot vector the caller supplies or from `make_bspline_interpolation`. The control points are not passed through, apart from the first and last under a clamped knot vector.
 
 ## Factory
 
@@ -56,7 +56,7 @@ The last check reads the derivative control points that `evaluate` uses for velo
 trajectory_point<Scalar, 1> evaluate(Scalar t) const;
 ```
 
-Evaluate position, velocity, and acceleration at parameter `t` using de Boor's algorithm. The parameter is clamped to the active range [U[p], U[n+1]]. Velocity and acceleration are computed from derivative control points. Repeated knots are handled by the 0/0 := 0 convention of the B-spline recurrences, and any strictly positive knot span is evaluated as given, however short.
+Evaluate position, velocity, and acceleration at parameter `t` using de Boor's algorithm. The parameter is clamped to the active range [U[p], U[n+1]]. Velocity and acceleration are computed from derivative control points formed once in `create`, so `evaluate` does not allocate. For `Degree = 1` the acceleration is zero. Repeated knots are handled by the 0/0 := 0 convention of the B-spline recurrences, and any strictly positive knot span is evaluated as given, however short.
 
 ### duration
 
@@ -77,7 +77,7 @@ ctrlpp::expected<bspline_trajectory<Scalar, Degree>, spline_error> make_bspline_
     std::vector<Scalar> const& positions);
 ```
 
-Constructs a B-spline that passes through all waypoints at the given parameter values. Generates a clamped knot vector using de Boor's averaging method and solves the interpolation matrix N * P = Q for control points.
+Constructs a B-spline that passes through all waypoints at the given parameter values. Generates a clamped knot vector over `[times.front(), times.back()]` using de Boor's averaging method and solves the collocation system N * P = Q for the control points with a column-pivoting Householder QR. `Degree` is not deducible from the arguments, so both template arguments are written: `make_bspline_interpolation<double, 3>(times, positions)`.
 
 Rejections, checked in order:
 
@@ -103,7 +103,7 @@ template <typename Scalar>
 Scalar basis_function(std::int32_t i, std::int32_t p, Scalar t, std::vector<Scalar> const& U);
 ```
 
-Evaluate the B-spline basis function B_{i,p}(t) using Cox-de Boor recursion. Primarily used internally by the interpolation factory.
+Evaluate the B-spline basis function B_{i,p}(t) using Cox-de Boor recursion over the knot vector `U`. It is a public entry to the recursion the interpolation factory uses to build its collocation matrix. Nothing is bounds-checked: `U` must hold at least `i + p + 2` knots.
 
 ## Concept Satisfaction
 

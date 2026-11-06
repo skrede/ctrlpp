@@ -9,17 +9,19 @@ Septic polynomial trajectory segment with arbitrary boundary conditions up to je
 
 ## Template Parameters
 
-| Parameter | Description |
-|-----------|-------------|
-| `Scalar` | Floating-point type |
-| `ND` | Number of dimensions (`std::size_t`) |
+| Parameter | Constraint | Description |
+|-----------|------------|-------------|
+| `Scalar` | none (`typename`) | Floating-point type; the factory tests it with `std::isfinite` |
+| `ND` | `std::size_t` | Number of dimensions, deduced by the factory from the rows of its fixed-size vector arguments |
 
 ## Struct Members
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `coeffs` | `std::array<Vector<Scalar, ND>, 8>` | Normalized polynomial coefficients `[c0..c7]` |
-| `dur` | `Scalar` | Segment duration in seconds |
+| `dur` | `Scalar` | Segment duration, in the caller's time unit |
+
+`septic_trajectory` is a public aggregate. Built directly rather than through the factory, nothing checks it: `evaluate` clamps `t` to `[0, dur]` and divides by `dur`, so `dur` must be finite and strictly positive.
 
 ## Member Functions
 
@@ -27,6 +29,8 @@ Septic polynomial trajectory segment with arbitrary boundary conditions up to je
 |----------|-----------|-------------|
 | `evaluate` | `trajectory_point<Scalar, ND> evaluate(Scalar t) const` | Position, velocity, acceleration at time `t` |
 | `duration` | `Scalar duration() const` | Segment duration `T` |
+
+Evaluation uses Horner's method. Time is clamped to `[0, T]`. `evaluate` returns position, velocity and acceleration only; the jerk the boundary conditions fix at the ends is not evaluated.
 
 ## Factory Function
 

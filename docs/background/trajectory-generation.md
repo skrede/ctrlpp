@@ -46,10 +46,19 @@ $$
 \begin{bmatrix} a_0 \\ a_1 \\ a_2 \\ a_3 \end{bmatrix}
 $$
 
+ctrlpp writes the polynomial in normalized time $\tau = t / T$, with
+coefficients $c_k = a_k T^k$, and evaluates it by Horner's method. With
+$h = q_1 - q_0$ the solution of the system above is
+
+$$
+c_0 = q_0, \quad c_1 = v_0 T, \quad c_2 = 3h - T (2 v_0 + v_1), \quad c_3 = -2h + T (v_0 + v_1)
+$$
+
 ### Quintic Polynomials
 
 A quintic polynomial additionally constrains accelerations at the endpoints,
-providing smoother motion with continuous jerk
+so a segment joins its neighbors with continuous acceleration when the
+boundary accelerations match theirs
 [1, Sec. 3.3, pp. 57--62]:
 
 $$
@@ -57,18 +66,22 @@ q(t) = a_0 + a_1 t + a_2 t^2 + a_3 t^3 + a_4 t^4 + a_5 t^5
 $$
 
 Six coefficients satisfy six boundary conditions: position, velocity, and
-acceleration at both $t = 0$ and $t = T$.
+acceleration at both $t = 0$ and $t = T$. A septic polynomial adds the jerk
+at both ends, for eight conditions and eight coefficients.
 
 ### Minimum-Jerk and Minimum-Snap
 
 Higher-order polynomials minimize specific motion derivatives
 [1, Sec. 3.4, pp. 63--66]:
 
-- **Minimum-jerk** (5th order): minimizes $\int_0^T \dddot{q}^2 \, dt$,
-  producing smooth, human-like motions
-- **Minimum-snap** (7th order): minimizes $\int_0^T q^{(4)2} \, dt$,
-  common in quadrotor trajectory planning where snap is proportional to
-  motor force rate
+- **Minimum-jerk** (5th order): among all motions meeting the position,
+  velocity and acceleration conditions at both ends, the quintic minimizes
+  $\int_0^T \dddot{q}^2 \, dt$
+- **Minimum-snap** (7th order): with the jerk conditions added, the septic
+  minimizes $\int_0^T (q^{(4)})^2 \, dt$
+
+ctrlpp builds these polynomials from the boundary conditions; it runs no
+optimization.
 
 ## Velocity Profiles
 
@@ -78,7 +91,8 @@ polynomial coefficients.
 
 ### Trapezoidal Velocity Profile
 
-The trapezoidal profile has three phases [1, Sec. 3.5, pp. 67--80]:
+For a rest-to-rest move with $h > 0$ the trapezoidal profile has three
+phases [1, Sec. 3.5, pp. 67--80]:
 
 1. **Acceleration**: constant acceleration $a_{\max}$ from rest to
    cruise velocity $v_{\max}$
@@ -95,12 +109,14 @@ T_a = \frac{v_{\max}}{a_{\max}}, \quad T_v = \frac{h}{v_{\max}} - \frac{v_{\max}
 $$
 
 If $h < v_{\max}^2 / a_{\max}$, the cruise phase vanishes and the profile
-becomes triangular.
+becomes triangular. ctrlpp's trapezoidal profile also takes nonzero boundary
+velocities $v_0$ and $v_1$, for which the phase durations follow from the
+same three-phase structure.
 
 ### Double-S (S-curve) Velocity Profile
 
-The double-S profile limits jerk as well as acceleration, producing smoother
-motion with reduced mechanical vibration. It has seven phases
+The double-S profile limits jerk as well as acceleration, so the acceleration
+is continuous. It has seven phases
 [1, Sec. 3.6, pp. 80--106]:
 
 1. Increasing acceleration (jerk $= j_{\max}$)
@@ -140,7 +156,26 @@ $n$ segments require $4n$ coefficients, determined by
 - $n - 1$ acceleration continuity conditions
 - $2$ boundary conditions (natural, clamped, or periodic)
 
-This yields a tridiagonal linear system that is solved in $O(n)$ time.
+ctrlpp takes the velocities at the knots as the unknowns. Natural and
+clamped end conditions give a tridiagonal linear system, solved in $O(n)$
+time by the Thomas algorithm; periodic end conditions give a cyclic
+tridiagonal one, also solved in $O(n)$.
+
+### Smoothing Splines
+
+A smoothing spline trades interpolation for smoothness when the waypoints
+are noisy. ctrlpp's smoothing spline has zero acceleration at both ends and
+solves for the second derivatives $d$ at the interior knots:
+
+$$
+(R + \lambda Q^\top Q) \, d = Q^\top q, \qquad \lambda = \frac{2 (1 - \mu)}{3 \mu}
+$$
+
+where $R$ is the tridiagonal smoothness matrix of the knot spacings, $Q$
+the second-difference matrix and $q$ the waypoints. The smoothed knot
+positions are $q - \lambda Q d$. The weight $\mu \in (0, 1]$ sets the
+tradeoff: $\mu = 1$ gives $\lambda = 0$ and the interpolating spline, and
+as $\mu$ approaches 0 the curve approaches the least-squares straight line.
 
 ### B-Splines
 
@@ -153,7 +188,9 @@ q(t) = \sum_{i=0}^{n} N_{i,p}(t) \, P_i
 $$
 
 where $N_{i,p}(t)$ are the B-spline basis functions (computed by the
-Cox-de Boor recursion) and $P_i$ are the control points.
+Cox-de Boor recursion) and $P_i$ are the control points, scalars in ctrlpp.
+ctrlpp evaluates the curve, and its derivatives from derivative control
+points, by de Boor's algorithm rather than by summing basis functions.
 
 ## Online Trajectory Generation
 
@@ -163,20 +200,22 @@ response to changing targets, enabling reactive motion
 
 ### Third-Order Online Planner
 
-A third-order online planner limits velocity, acceleration, and jerk. At each
-sample time, it evaluates the current kinematic state
-$(q_k, \dot{q}_k, \ddot{q}_k)$ and computes the next sample toward the
-target position, respecting all constraints
-[1, Sec. 7.3, pp. 255--270]:
+A third-order online planner limits velocity, acceleration, and jerk
+[1, Sec. 7.3, pp. 255--270]. When the target changes, it plans a double-S
+profile from the current kinematic state $(q, \dot{q}, \ddot{q})$ to the
+target at rest; between target changes each sample evaluates that plan.
 
-The planner constructs a sequence of constant-jerk phases:
-1. Brake to zero acceleration if needed (to prepare for direction change)
+The plan is a sequence of constant-jerk phases:
+1. Bring a nonzero starting acceleration to zero
 2. Accelerate toward the target
 3. Cruise at maximum velocity
 4. Decelerate to arrive with zero velocity at the target
 
-When the target changes mid-motion, the planner re-evaluates from the current
-state, using a brake-to-zero-then-replan strategy for robustness.
+A move in the direction the axis is already traveling carries the current
+velocity into the profile. A velocity pointing away from the target, or too
+large to stop in the remaining distance, is braked to rest first, and the
+profile is planned from the stopping point. The second-order planner does
+the same with velocity and acceleration limits only.
 
 ## Multi-Axis Synchronization
 
@@ -188,10 +227,12 @@ $$
 T = \max_j T_j
 $$
 
-Each axis $j$ then adjusts its velocity and acceleration limits to complete
-its motion in exactly $T$ while maintaining the same profile shape. The
-scaling preserves the jerk, acceleration, and velocity constraints while
-ensuring all axes start and stop together.
+Each axis $j$ is then retimed to complete its motion in $T$. ctrlpp's
+trapezoidal profile lowers its cruise velocity at a fixed acceleration; the
+double-S profile is rebuilt under velocity, acceleration and jerk limits
+scaled by the first, second and third power of one factor. Every axis is
+checked before any is retimed, so a set that cannot be synchronized is left
+unchanged.
 
 ## References
 

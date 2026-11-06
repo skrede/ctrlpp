@@ -1,6 +1,6 @@
 # modified_sin_trajectory
 
-Modified sinusoidal velocity profile with harmonic+cycloidal blend. Uses a sinusoidal central region with cycloidal transition regions at start and end. Produces very smooth acceleration with reduced vibration excitation compared to standard profiles. Duration is user-specified.
+Modified sinusoidal motion law: a sinusoidal central region with cycloidal regions at start and end, joined with continuous acceleration. The motion is rest to rest, and the duration is user-specified (not solved from kinematic limits).
 
 | Property | Value |
 |----------|-------|
@@ -8,9 +8,9 @@ Modified sinusoidal velocity profile with harmonic+cycloidal blend. Uses a sinus
 
 ## Template Parameters
 
-| Parameter | Description |
-|-----------|-------------|
-| `Scalar` | Floating-point type |
+| Parameter | Constraint | Description |
+|-----------|------------|-------------|
+| `Scalar` | `ctrlpp_floating_scalar` | Floating-point type |
 
 Output dimension is fixed at ND=1 (scalar trajectory).
 
@@ -24,11 +24,15 @@ struct config {
 };
 ```
 
+`config` has no defaults; every field is required.
+
 ## Constructor
 
 ```cpp
 explicit modified_sin_trajectory(config const& cfg);
 ```
+
+The constructor validates nothing and there is no factory. `T` must be finite and strictly positive: `evaluate` divides by it. The direction of travel is the sign of `q1 - q0`; the profile is built for `h = abs(q1 - q0)` and mirrored for a negative displacement. `evaluate` clamps `t` to `[0, T]`.
 
 ## Profile Structure
 
@@ -48,8 +52,8 @@ Normalized velocity profile (tau = t/T) with `A = pi/(pi+4)`:
 
 ## Key Constants
 
-- **Peak velocity:** `4*pi*h / ((pi+4)*T)`
-- **Peak acceleration:** `4*pi^2*h / ((pi+4)*T^2)`
+- **Peak velocity:** `4*pi*h / ((pi+4)*T)`, about `1.760*h/T`
+- **Peak acceleration:** `4*pi^2*h / ((pi+4)*T^2)`, about `5.528*h/T^2`
 
 ## Member Functions
 
@@ -57,7 +61,7 @@ Normalized velocity profile (tau = t/T) with `A = pi/(pi+4)`:
 |----------|-----------|-------------|
 | `evaluate` | `trajectory_point<Scalar, 1> evaluate(Scalar t) const` | Position, velocity, acceleration at time `t` |
 | `duration` | `Scalar duration() const` | Total duration `T` |
-| `peak_velocity` | `Scalar peak_velocity() const` | `4*pi*h / ((pi+4)*T)` |
+| `peak_velocity` | `Scalar peak_velocity() const` | `4*pi*h / ((pi+4)*T)`, a nonnegative speed for either direction of travel |
 
 ## Usage Example
 

@@ -1,6 +1,6 @@
 # cubic_spline
 
-Cubic spline interpolation through waypoints with C2 continuity. Supports natural (zero endpoint acceleration), clamped (assigned endpoint velocities), and periodic (cyclic) boundary conditions. Internally solves a tridiagonal system for spline velocities using the velocity-based formulation.
+Cubic spline interpolation through scalar waypoints with C2 continuity; a multi-axis path is one spline per axis. Supports natural (zero endpoint acceleration), clamped (assigned endpoint velocities), and periodic (cyclic) boundary conditions. Internally solves a tridiagonal system for spline velocities using the velocity-based formulation.
 
 ## Header
 
@@ -12,7 +12,7 @@ Cubic spline interpolation through waypoints with C2 continuity. Supports natura
 
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
-| `Scalar` | arithmetic type | Numeric type (`float`, `double`, `long double`) |
+| `Scalar` | `ctrlpp_floating_scalar` | Floating-point type (`float`, `double`, `long double`) |
 
 ## Boundary Conditions
 
@@ -54,13 +54,14 @@ Rejections, checked in order:
 | `times` and `positions` differ in length | `spline_error::size_mismatch` |
 | A non-finite knot time, waypoint, or endpoint velocity | `spline_error::non_finite_input` |
 | Knot times not strictly increasing | `spline_error::non_increasing_times` |
+| A knot span `t_(i+1) - t_i` that overflows `Scalar` (checked span by span with the row above) | `spline_error::unrepresentable_spline` |
 | Periodic BC with fewer than 3 waypoints | `spline_error::periodic_too_few_points` |
 | Periodic BC with q_0 != q_n beyond the rounding budget | `spline_error::periodic_endpoint_mismatch` |
 | Polynomial coefficients outside the representable range of `Scalar`, or a velocity system whose elimination meets a pivot indistinguishable from zero | `spline_error::unrepresentable_spline` |
 
 The last check is made on the coefficients after they are formed, rather than predicted from the knot spacing, because the spacing does not determine it. The cubic coefficient is a difference of slopes divided by the square of the span, so its magnitude runs with the waypoint separation divided by the **cube** of the span, and the numerator carries a waypoint scale that cancels away entirely on collinear data. A span whose square is perfectly representable can still drive that quotient out of range in either direction: at a span of 1e150 the square is 1e300 and comfortably finite, while the coefficient has already flushed through the bottom of the exponent range and the spline evaluates as a quadratic. Overflow is reported the same way, and a coefficient that has gone subnormal is reported too -- it carries fewer than the type's significand, so the term it multiplies is known to a few bits rather than rounded.
 
-What decides it is how far the term **reaches** across its own span, measured against the resolution the evaluated position is known at, rather than the magnitude of any intermediate on its own. That distinction is load-bearing for the most ordinary trajectory there is. Both curvature numerators are differences of slopes, so on collinear waypoints -- a constant-velocity segment -- they are mathematically zero and arrive as the rounding residual of that cancellation, not as an exact zero. A rule reading that residual as a real quantity would divide it by a large span, find the result subnormal, and refuse the flat spline while accepting a curved one at the same span, which is backwards: the flat case is the better conditioned of the two. A constant-velocity segment is accepted at every span whose reciprocal is representable.
+What decides it is how far the term **reaches** across its own span, measured against the resolution the evaluated position is known at, rather than the magnitude of any intermediate on its own. That distinction is load-bearing for the most ordinary trajectory there is. Both curvature numerators are differences of slopes, so on collinear waypoints -- a constant-velocity segment -- they are mathematically zero and arrive as the rounding residual of that cancellation, not as an exact zero. A rule reading that residual as a real quantity would divide it by a large span, find the result subnormal, and refuse the flat spline while accepting a curved one at the same span, which is backwards: the flat case is the better conditioned of the two. So a constant-velocity segment is accepted at large spans where curved data is refused. Measured in `double` on three equally spaced waypoints: `0, 1, 0` is accepted for spans from about `1.4e-103` to about `2.8e102`, while `0, 1, 2` is accepted from about `1.4e-118` up to at least `1e300`. Small spans are bounded for every data set, because the cubic coefficient divides by the square of the span: with unit slope (`0, h, 2h`) the smallest accepted span is about `1.6e-162`, where that square underflows.
 
 ## Methods
 
@@ -70,7 +71,7 @@ What decides it is how far the term **reaches** across its own span, measured ag
 trajectory_point<Scalar, 1> evaluate(Scalar t) const;
 ```
 
-Evaluate position, velocity, and acceleration at time `t`. Time is clamped to [t_0, t_n]. Uses binary search to find the active span followed by Horner polynomial evaluation.
+Evaluate position, velocity, and acceleration at time `t`. Time is clamped to [t_0, t_n]. Uses binary search to find the active span followed by Horner polynomial evaluation. A time exactly on an interior knot `t_i` is evaluated by the span that starts there; `t_n` is evaluated by the last span.
 
 ### duration
 

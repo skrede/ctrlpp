@@ -8,9 +8,9 @@ Normalized septic polynomial path: `q(tau) = 35*tau^4 - 84*tau^5 + 70*tau^6 - 20
 
 ## Template Parameters
 
-| Parameter | Description |
-|-----------|-------------|
-| `Scalar` | Floating-point type |
+| Parameter | Constraint | Description |
+|-----------|------------|-------------|
+| `Scalar` | none (`typename`) | Floating-point type |
 
 ## Functions
 
@@ -21,7 +21,7 @@ template <typename Scalar>
 path_point<Scalar> septic_path(Scalar tau);
 ```
 
-Evaluate the septic motion law at normalized time `tau` in [0,1].
+Evaluate the septic motion law at normalized time `tau`, meant for `[0, 1]`. Returns position, velocity, acceleration, and jerk, as derivatives with respect to `tau`. `tau` is not clamped: outside `[0, 1]` the polynomial is evaluated as written, so a caller clamps `tau` itself when it can leave the interval.
 
 ### septic_path_peak_derivatives
 
@@ -30,14 +30,14 @@ template <typename Scalar>
 std::array<Scalar, 3> septic_path_peak_derivatives();
 ```
 
-Returns `{dq_max, ddq_max, dddq_max}` = `{35/16, ~7.5132, 52.5}`. The ddq_max value involves nested radicals without a simple closed form.
+Returns the peak magnitudes `{dq_max, ddq_max, dddq_max}` = `{35/16, 7.5132, 52.5}` over `[0, 1]`, the argument `compute_min_duration` takes. `ddq_max` is the literal `7.5132`, the peak rounded to five significant figures; its exact value has no simple closed form.
 
 ## Peak Derivatives
 
 | Derivative | Value | Description |
 |------------|-------|-------------|
 | dq_max | 2.1875 | Peak normalized velocity (35/16) |
-| ddq_max | 7.5132 | Peak normalized acceleration (approximate) |
+| ddq_max | 7.5132 | Peak normalized acceleration (rounded literal) |
 | dddq_max | 52.5 | Peak normalized jerk |
 
 ## Usage Example
@@ -56,11 +56,13 @@ int main()
 {
     Eigen::Vector2d q0{0.0, 0.0}, q1{5.0, 3.0};
     double T = 4.0;
-    auto traj = ctrlpp::make_trajectory(ctrlpp::septic_path<double>, q0, q1, T).value();
+    auto const traj = ctrlpp::make_trajectory(ctrlpp::septic_path<double>, q0, q1, T);
+    if (!traj.has_value())
+        return 1;
 
     constexpr double dt = 0.01;
     for (double t = 0.0; t <= T; t += dt) {
-        auto pt = traj.evaluate(t);
+        auto pt = traj->evaluate(t);
         std::cout << t << "," << pt.position(0) << "," << pt.velocity(0)
                   << "," << pt.acceleration(0) << "\n";
     }

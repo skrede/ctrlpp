@@ -1,6 +1,6 @@
 # path_segment
 
-Concept constraining types that represent a normalized path segment evaluated over [0,1]. A path segment provides `evaluate(tau)` returning a `path_point` and `duration()` returning the normalized duration (typically 1.0).
+Concept constraining types that represent a path segment for [`piecewise_path`](piecewise-path.md). A path segment provides `evaluate(tau)` returning a `path_point` and `duration()` returning the length of its parameter interval, which starts at zero (1 for a segment over the normalized interval `[0, 1]`).
 
 | Property | Value |
 |----------|-------|
@@ -11,7 +11,7 @@ Concept constraining types that represent a normalized path segment evaluated ov
 | Parameter | Description |
 |-----------|-------------|
 | `S` | The type being constrained |
-| `Scalar` | Floating-point type |
+| `Scalar` | The parameter and value type |
 
 ## Concept Definition
 
@@ -27,12 +27,12 @@ concept path_segment = requires(const S& seg, Scalar tau) {
 
 | Expression | Return type | Description |
 |------------|-------------|-------------|
-| `seg.evaluate(tau)` | convertible to `path_point<Scalar>` | Normalized position and derivatives at `tau` |
-| `seg.duration()` | convertible to `Scalar` | Normalized duration (typically 1.0) |
+| `seg.evaluate(tau)` | convertible to `path_point<Scalar>` | Position and derivatives at `tau` |
+| `seg.duration()` | convertible to `Scalar` | Length of the parameter interval `[0, duration()]` |
 
 ## Relationship to Free Functions
 
-The elementary path functions (`cubic_path`, `quintic_path`, etc.) are free functions, not types. They produce `path_point` values but do not satisfy this concept directly. Use `piecewise_path` for composing path segments that satisfy this concept.
+The elementary path functions (`cubic_path`, `quintic_path`, etc.) are free functions, not types. They produce `path_point` values but do not satisfy this concept. No library type other than `piecewise_path` itself satisfies it, so a segment is a caller-written type, usually a small struct whose `evaluate` calls one of the path functions and whose `duration` returns 1. The [`piecewise_path`](piecewise-path.md) page shows one.
 
 ## Usage Example
 

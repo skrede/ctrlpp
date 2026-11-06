@@ -8,9 +8,9 @@ Normalized quintic polynomial path: `q(tau) = 10*tau^3 - 15*tau^4 + 6*tau^5`. C2
 
 ## Template Parameters
 
-| Parameter | Description |
-|-----------|-------------|
-| `Scalar` | Floating-point type |
+| Parameter | Constraint | Description |
+|-----------|------------|-------------|
+| `Scalar` | none (`typename`) | Floating-point type |
 
 ## Functions
 
@@ -21,7 +21,7 @@ template <typename Scalar>
 path_point<Scalar> quintic_path(Scalar tau);
 ```
 
-Evaluate the quintic motion law at normalized time `tau` in [0,1].
+Evaluate the quintic motion law at normalized time `tau`, meant for `[0, 1]`. Returns position, velocity, acceleration, and jerk, as derivatives with respect to `tau`. `tau` is not clamped: outside `[0, 1]` the polynomial is evaluated as written, so a caller clamps `tau` itself when it can leave the interval.
 
 ### quintic_path_peak_derivatives
 
@@ -30,7 +30,7 @@ template <typename Scalar>
 std::array<Scalar, 3> quintic_path_peak_derivatives();
 ```
 
-Returns `{dq_max, ddq_max, dddq_max}` = `{15/8, 10*sqrt(3)/3, 60}`. Not constexpr due to `sqrt`.
+Returns the peak magnitudes `{dq_max, ddq_max, dddq_max}` = `{15/8, 10*sqrt(3)/3, 60}` over `[0, 1]`, the argument `compute_min_duration` takes.
 
 ## Peak Derivatives
 
@@ -56,11 +56,13 @@ int main()
 {
     Eigen::Vector2d q0{0.0, 0.0}, q1{2.0, 1.0};
     double T = 3.0;
-    auto traj = ctrlpp::make_trajectory(ctrlpp::quintic_path<double>, q0, q1, T).value();
+    auto const traj = ctrlpp::make_trajectory(ctrlpp::quintic_path<double>, q0, q1, T);
+    if (!traj.has_value())
+        return 1;
 
     constexpr double dt = 0.01;
     for (double t = 0.0; t <= T; t += dt) {
-        auto pt = traj.evaluate(t);
+        auto pt = traj->evaluate(t);
         std::cout << t << "," << pt.position(0) << "," << pt.velocity(0)
                   << "," << pt.acceleration(0) << "\n";
     }

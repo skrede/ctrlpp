@@ -8,9 +8,9 @@ Cycloidal motion law: `q(tau) = tau - sin(2*pi*tau) / (2*pi)`. Zero acceleration
 
 ## Template Parameters
 
-| Parameter | Description |
-|-----------|-------------|
-| `Scalar` | Floating-point type |
+| Parameter | Constraint | Description |
+|-----------|------------|-------------|
+| `Scalar` | none (`typename`) | Floating-point type |
 
 ## Functions
 
@@ -21,7 +21,7 @@ template <typename Scalar>
 path_point<Scalar> cycloidal_path(Scalar tau);
 ```
 
-Evaluate the cycloidal motion law at normalized time `tau` in [0,1].
+Evaluate the cycloidal motion law at normalized time `tau`, meant for `[0, 1]`. Returns position, velocity, acceleration, and jerk, as derivatives with respect to `tau`. `tau` is not clamped: outside `[0, 1]` the law is evaluated as written, so a caller clamps `tau` itself when it can leave the interval.
 
 ### cycloidal_path_peak_derivatives
 
@@ -30,7 +30,7 @@ template <typename Scalar>
 std::array<Scalar, 3> cycloidal_path_peak_derivatives();
 ```
 
-Returns `{dq_max, ddq_max, dddq_max}` = `{2, 2*pi, 4*pi^2}`.
+Returns the peak magnitudes `{dq_max, ddq_max, dddq_max}` = `{2, 2*pi, 4*pi^2}` over `[0, 1]`, the argument `compute_min_duration` takes.
 
 ## Peak Derivatives
 
@@ -68,11 +68,13 @@ int main()
     double T = ctrlpp::compute_min_duration(2.0, peaks, 1.0, 5.0, 50.0);
 
     Eigen::Vector2d q0{0.0, 0.0}, q1{2.0, 0.0};
-    auto traj = ctrlpp::make_trajectory(ctrlpp::cycloidal_path<double>, q0, q1, T).value();
+    auto const traj = ctrlpp::make_trajectory(ctrlpp::cycloidal_path<double>, q0, q1, T);
+    if (!traj.has_value())
+        return 1;
 
     constexpr double dt = 0.01;
     for (double t = 0.0; t <= T; t += dt) {
-        auto pt = traj.evaluate(t);
+        auto pt = traj->evaluate(t);
         std::cout << t << "," << pt.position(0) << "," << pt.velocity(0)
                   << "," << pt.acceleration(0) << "\n";
     }

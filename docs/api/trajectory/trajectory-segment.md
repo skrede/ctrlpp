@@ -2,6 +2,8 @@
 
 Concept constraining types that represent a trajectory segment with timed evaluation. A trajectory segment provides `evaluate(t)` returning a `trajectory_point` and `duration()` returning the total time span.
 
+The concept checks only the two expressions. Whether `evaluate` clamps `t`, and where its time origin lies, is each type's own contract: the splines evaluate over their own knot interval `[t_0, t_n]`, every other type over `[0, duration()]`.
+
 | Property | Value |
 |----------|-------|
 | **Header** | `ctrlpp/trajectory/trajectory_segment.h` |
@@ -11,7 +13,7 @@ Concept constraining types that represent a trajectory segment with timed evalua
 | Parameter | Description |
 |-----------|-------------|
 | `S` | The type being constrained |
-| `Scalar` | Floating-point type |
+| `Scalar` | The time and value type |
 | `ND` | Number of dimensions (`std::size_t`) |
 
 ## Concept Definition
@@ -29,11 +31,11 @@ concept trajectory_segment = requires(const S& seg, Scalar t) {
 | Expression | Return type | Description |
 |------------|-------------|-------------|
 | `seg.evaluate(t)` | convertible to `trajectory_point<Scalar, ND>` | Position, velocity, acceleration at time `t` |
-| `seg.duration()` | convertible to `Scalar` | Total segment duration in seconds |
+| `seg.duration()` | convertible to `Scalar` | Total segment duration, in the caller's time unit |
 
 ## Satisfying Types
 
-All trajectory types in `ctrlpp/trajectory/` satisfy this concept:
+These trajectory types in `ctrlpp/trajectory/` satisfy this concept:
 
 - `trajectory<Law, Scalar, ND>`
 - `cubic_trajectory<Scalar, ND>`
@@ -43,7 +45,12 @@ All trajectory types in `ctrlpp/trajectory/` satisfy this concept:
 - `double_s_trajectory<Scalar>` (ND=1)
 - `modified_trap_trajectory<Scalar>` (ND=1)
 - `modified_sin_trajectory<Scalar>` (ND=1)
+- `cubic_spline<Scalar>` (ND=1)
+- `smoothing_spline<Scalar>` (ND=1)
+- `bspline_trajectory<Scalar, Degree>` (ND=1)
 - `piecewise_trajectory<Scalar, ND, Segments...>`
+
+The online planners do not: they are sampled by time through `sample` and have no `evaluate`.
 
 ## Usage Example
 
@@ -59,9 +66,11 @@ All trajectory types in `ctrlpp/trajectory/` satisfy this concept:
 int main()
 {
     using Vec1 = Eigen::Matrix<double, 1, 1>;
-    auto seg = ctrlpp::make_cubic_trajectory(Vec1{0.0}, Vec1{1.0}, Vec1{0.0}, Vec1{0.0}, 2.0).value();
-    for (double t = 0; t <= seg.duration(); t += 0.01) {
-        auto pt = seg.evaluate(t);
+    auto const seg = ctrlpp::make_cubic_trajectory(Vec1{0.0}, Vec1{1.0}, Vec1{0.0}, Vec1{0.0}, 2.0);
+    if (!seg.has_value())
+        return 1;
+    for (double t = 0; t <= seg->duration(); t += 0.01) {
+        auto pt = seg->evaluate(t);
         std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "," << pt.acceleration(0) << "\n";
     }
 }
