@@ -7,6 +7,7 @@ SISO transfer function representation as numerator and denominator polynomial co
 | Form | Header |
 |------|--------|
 | `transfer_function<Scalar, NumDeg, DenDeg>` | `#include <ctrlpp/model/transfer_function.h>` |
+| (convenience) | `#include <ctrlpp/transfer_function.h>` |
 
 ```cpp
 template <typename Scalar, std::size_t NumDeg, std::size_t DenDeg>
@@ -20,9 +21,11 @@ struct transfer_function {
 
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
-| `Scalar` | floating-point | Numeric type |
-| `NumDeg` | `>= 0` | Numerator polynomial degree |
-| `DenDeg` | `>= 1` | Denominator polynomial degree |
+| `Scalar` | none (`typename`) | Numeric type |
+| `NumDeg` | none | Numerator polynomial degree |
+| `DenDeg` | none | Denominator polynomial degree |
+
+The struct is a plain aggregate and constrains nothing. `tf2ss` requires `NumDeg <= DenDeg` and `DenDeg >= 1`, and a floating-point `Scalar` through the `continuous_state_space` it returns; see [conversion](conversion.md).
 
 ## Fields
 

@@ -77,8 +77,8 @@ $$
 H(z) = \frac{b_0 + b_1 z^{-1} + b_2 z^{-2}}{1 + a_1 z^{-1} + a_2 z^{-2}}
 $$
 
-Six coefficients ($b_0, b_1, b_2, a_1, a_2$, with implicit $a_0 = 1$) define
-any second-order filter. The difference equation is:
+Five stored coefficients ($b_0, b_1, b_2, a_1, a_2$, with $a_0$ normalized to
+1) define any second-order filter. The difference equation is:
 
 $$
 y[n] = b_0 \, x[n] + b_1 \, x[n-1] + b_2 \, x[n-2] - a_1 \, y[n-1] - a_2 \, y[n-2]
@@ -88,7 +88,8 @@ $$
 
 The Direct Form II Transposed (DF2T) implementation uses only two state
 variables per section, providing good numerical properties
-[1, Sec. 10.6, pp. 780--785]:
+[1, Sec. 10.6, pp. 780--785]. `biquad::process` implements exactly these three
+updates:
 
 $$
 y[n] = b_0 \, x[n] + s_1[n]
@@ -104,16 +105,19 @@ $$
 
 ### Common Biquad Types
 
-Standard biquad coefficient formulas [2]:
+Standard biquad coefficient formulas [2] cover low-pass, high-pass,
+band-pass, notch and other responses. ctrlpp designs three of them:
 
-- **Low-pass**: attenuates frequencies above cutoff $f_c$ with quality
-  factor $Q$ controlling the resonance peak
-- **High-pass**: attenuates frequencies below cutoff $f_c$
-- **Band-pass**: passes a frequency band centered at $f_0$ with bandwidth
-  determined by $Q$
-- **Notch (band-reject)**: rejects a specific frequency $f_0$
-- **Dirty derivative**: differentiator with built-in low-pass rolloff,
-  providing derivative estimation with noise attenuation
+- **Low-pass**: attenuates frequencies above cutoff $f_c$. The library's
+  `low_pass` fixes $Q = 1/\sqrt{2}$ (second-order Butterworth); the quality
+  factor is not a parameter
+- **Notch (band-reject)**: rejects a specific frequency $f_0$, with $Q$
+  setting the width of the notch
+- **Dirty derivative**: a first-order differentiator with built-in low-pass
+  rolloff, providing derivative estimation with noise attenuation
+
+The library designs no high-pass or band-pass section; such a filter is
+built from its own coefficients.
 
 ## Bilinear Transform
 
@@ -141,6 +145,13 @@ Pre-warping compensates for this distortion: given a desired digital cutoff
 frequency $\omega_d$, compute the pre-warped analog frequency $\omega_a$
 and design the analog prototype at $\omega_a$.
 
+Every ctrlpp design pre-warps. It forms its sections from
+$\Omega = \tan(\pi f_c / f_s) = \omega_a T_s / 2$, the bilinear map divided
+through so each coefficient is near unit scale, and stores $a_1$ and $a_2$ as
+offsets from their limits $-2$ and $1$. The design is refused below a
+coefficient-resolution floor where the stored coefficients cannot carry the
+gap $1 + a_1 + a_2$; see [biquad](../api/dsp/biquad.md).
+
 ## FIR Filters
 
 Finite Impulse Response (FIR) filters use only feedforward terms (no
@@ -152,6 +163,7 @@ y[n] = \sum_{k=0}^{M} h_k \, x[n-k]
 $$
 
 where $h_0, h_1, \ldots, h_M$ are the filter coefficients (impulse response).
+`fir<Scalar, N>` holds $N = M + 1$ taps, `taps[k]` being $h_k$.
 
 FIR advantages:
 - **Always stable**: no poles, no risk of instability
@@ -173,8 +185,18 @@ $$
 
 A fourth-order Butterworth low-pass filter, for example, is two cascaded
 second-order sections ($L = 2$). Cascading is numerically more robust than
-implementing a single high-order transfer function, because each second-order
-section has well-conditioned coefficients.
+implementing a single high-order transfer function, because the poles of a
+second-order section are far less sensitive to coefficient rounding than the
+roots of a high-order polynomial.
+
+ctrlpp builds even-order cascades only, `make_butterworth<Order>` and
+`make_chebyshev1<Order>`. A Butterworth section $k$ has
+$1/Q_k = 2\cos\theta_k$ with $\theta_k = \pi(2k + 1)/(2\,\text{Order})$. A
+Chebyshev Type I section has the prototype poles
+$-\sinh v \sin\theta_k \pm j \cosh v \cos\theta_k$, with
+$v = \operatorname{asinh}(1/\varepsilon)/\text{Order}$ and
+$\varepsilon = \sqrt{10^{r/10} - 1}$ for a ripple of $r$ dB. Its DC gain is set
+to $1/\sqrt{1 + \varepsilon^2}$, so the passband peaks at 0 dB.
 
 ## Frequency Response
 
@@ -187,7 +209,8 @@ $$
 
 The magnitude $|H(e^{j\omega T_s})|$ gives the gain at each frequency; the
 phase $\angle H(e^{j\omega T_s})$ gives the phase shift. The frequency
-response is periodic with period $f_s$ and symmetric about $f_s/2$.
+response is periodic with period $f_s$, and for real coefficients its
+magnitude is symmetric about $f_s/2$.
 
 ## References
 

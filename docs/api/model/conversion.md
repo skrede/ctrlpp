@@ -1,6 +1,6 @@
 # conversion
 
-Conversion between transfer function and state-space representations. `tf2ss` produces controllable canonical form; `ss2tf` forms both polynomials from the eigenvalues of a diagonally balanced matrix. Both operate on SISO systems and both are fallible: an input they cannot convert is refused with a `conversion_error`, never returned as a result with infinities or a wrong polynomial.
+Conversion between transfer function and state-space representations. `tf2ss` produces the bottom-companion (phase-variable) controllable canonical form; `ss2tf` forms both polynomials from the eigenvalues of a diagonally balanced matrix. Both operate on SISO systems and both are fallible: an input they cannot convert is refused with a `conversion_error`, never returned as a result with infinities or a wrong polynomial.
 
 ## Header and Alias
 
@@ -22,7 +22,21 @@ ctrlpp::expected<continuous_state_space<Scalar, DenDeg, 1, 1>, conversion_error>
 tf2ss(const transfer_function<Scalar, NumDeg, DenDeg>& tf);
 ```
 
-Converts a transfer function to controllable canonical form state-space. Requires a proper transfer function (`NumDeg <= DenDeg`). The state dimension equals `DenDeg`. Coefficients are normalized to a monic denominator.
+Converts a transfer function to controllable canonical form state-space. Requires a proper transfer function (`NumDeg <= DenDeg`) and `DenDeg >= 1` (a `static_assert`). The state dimension equals `DenDeg`. Coefficients are divided by `tf.denominator[0]`, so the realization is formed from the monic denominator `s^n + a_1 s^(n-1) + ... + a_n` and the numerator padded to `b_0 s^n + b_1 s^(n-1) + ... + b_n` (`b_0 = 0` unless `NumDeg == DenDeg`).
+
+The realization is the bottom-companion (phase-variable) form:
+
+```
+A = [  0     1     0   ...   0  ]     B = [0]     C = [c_n  c_(n-1)  ...  c_1]     D = b_0
+    [  0     0     1   ...   0  ]         [0]
+    [ ...                   ... ]         [:]     c_k = b_k - b_0 a_k
+    [  0     0     0   ...   1  ]         [0]
+    [-a_n -a_(n-1)  ...    -a_1 ]         [1]
+```
+
+so `B = e_n` and each state is the derivative of the one before it (`x_(k+1) = x_k'`). For `(2s + 3) / (s^2 + 5s + 6)` this gives `A = [0 1; -6 -5]`, `B = [0; 1]`, `C = [3 2]`, `D = 0`.
+
+This is not MATLAB's `tf2ss` form. MATLAB returns the top-companion form, with the coefficients `-a_1 ... -a_n` in the first row, `B = e_1` and `C = [c_1 ... c_n]` (for the example, `A = [-5 -6; 1 0]`, `B = [1; 0]`, `C = [2 3]`). The two are related by the coordinate change that reverses the state order, `x_matlab = J x` with `J` the exchange matrix, and have the same transfer function.
 
 Refusals, checked in order:
 
@@ -30,7 +44,7 @@ Refusals, checked in order:
 | --- | --- |
 | a numerator or denominator coefficient is NaN or infinite | `conversion_error::non_finite_input` |
 | `tf.denominator[0] == 0`: the denominator's true degree is below `DenDeg`, so no companion form of that dimension exists | `conversion_error::zero_leading_coefficient` |
-| the coefficients are finite but a normalized one overflows (a tiny leading coefficient) | `conversion_error::unrepresentable_result` |
+| the coefficients are finite but an entry of the realization is not: a normalized coefficient overflows (a tiny leading coefficient), or so does `b_k - b_0 a_k` | `conversion_error::unrepresentable_result` |
 
 ### ss2tf
 
@@ -46,14 +60,16 @@ The denominator is the characteristic polynomial of A. A copy of A is balanced b
 
 det(sI - A + alpha B C) = det(sI - A) (1 + alpha C (sI - A)^-1 B),
 
-so the numerator is D poly(A) + (poly(A - alpha B C) - poly(A)) / alpha for any nonzero alpha. `ss2tf` takes alpha as the power of two nearest ||A||_F / (||B|| ||C||), so that alpha B C is on the scale of A and the division by alpha is exact. The leading numerator coefficient is D exactly, and B = 0 or C = 0 returns D poly(A).
+so the numerator is D poly(A) + (poly(A - alpha B C) - poly(A)) / alpha for any nonzero alpha. `ss2tf` takes alpha as `2^round(log2(||A||_F / (||B|| ||C||)))`, its exponent clamped to the normal range of `Scalar` (and alpha = 1 when A = 0), so that alpha B C is on the scale of A and the division by alpha is exact. The leading numerator coefficient is D exactly, and B = 0 or C = 0 returns D poly(A).
 
 Refusals, checked in order:
 
 | Condition | Enumerator |
 | --- | --- |
 | an entry of A, B, C or D is NaN or infinite | `conversion_error::non_finite_input` |
-| the eigensolver does not converge | `conversion_error::eigenvalues_not_converged` |
+| the eigensolver does not converge on A | `conversion_error::eigenvalues_not_converged` |
+| B and C are nonzero and `A - alpha B C` overflows | `conversion_error::unrepresentable_result` |
+| the eigensolver does not converge on `A - alpha B C` | `conversion_error::eigenvalues_not_converged` |
 | the input is finite but a coefficient is not | `conversion_error::unrepresentable_result` |
 
 **Accuracy.** The coefficients carry the eigenvalues' rounding, so a round trip through `tf2ss` is not bit-exact even on small integer cases; it is bounded. The QR algorithm's eigenvalues are exact for the balanced matrix plus a perturbation of norm about n u ||A_bal||_F (u the unit roundoff), so each eigenvalue moves by at most r_i = kappa_i n u ||A_bal||_F to first order, with kappa_i its condition number. Writing e_k for the k-th coefficient of the polynomial with roots |lambda_i|, coefficient k moves by at most e_k(|lambda| + r) - e_k(|lambda|), plus the factor product's own rounding, gamma_m e_k(|lambda| + r) with gamma_m = m u / (1 - m u) and m counting two roundings per real factor and five per conjugate pair. The numerator inherits the two polynomials' bounds divided by alpha. On eight real poles from -0.1 to -1000 the recovered coefficients agree with the originals to about 4e-13 relative in the numerator and 2e-13 in the denominator.

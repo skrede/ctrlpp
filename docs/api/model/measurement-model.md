@@ -1,6 +1,6 @@
 # measurement_model
 
-C++20 concept constraining measurement callables. Used throughout the library to type-check measurement functions passed to estimators (EKF, UKF, particle filter, MHE, NMHE).
+C++20 concept constraining measurement callables. The estimators (EKF, UKF, particle filter, MHE, NMHE) require it of the measurement model they are given.
 
 ## Header
 

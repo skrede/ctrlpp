@@ -25,7 +25,7 @@ A type satisfies `differentiable_measurement` when it satisfies `measurement_mod
 
 1. `jacobian(x)` returning `Matrix<Scalar, NY, NX>`: the Jacobian of `h(x)` with respect to `x`.
 
-When a measurement model does **not** satisfy this concept, the EKF and MHE fall back to central finite-difference Jacobians.
+When a measurement model does **not** satisfy this concept, the EKF and the linear MHE fall back to central finite-difference Jacobians, with the same `numerical_eps` step as for the dynamics.
 
 ## Example Model Implementation
 

@@ -11,10 +11,11 @@ Every design factory validates its parameters and returns `ctrlpp::expected<Filt
 | `biquad<Scalar>` | `#include <ctrlpp/dsp/biquad.h>` |
 | `biquad_coeffs<Scalar>`, `dsp_error` | `#include <ctrlpp/dsp/dsp_types.h>` (pulled in by `biquad.h`) |
 | `cascaded_biquad<Scalar, N>`, `make_butterworth`, `make_chebyshev1` | `#include <ctrlpp/dsp/cascaded_biquad.h>` (pulled in by `biquad.h`) |
+| `vector_biquad<Scalar, N>`, `vector_cascaded_biquad<Scalar, N, Sections>`, `make_vector_butterworth`, `make_vector_chebyshev1` | `#include <ctrlpp/dsp/vector_biquad.h>` |
 | (convenience) | `#include <ctrlpp/dsp.h>` |
 
 ```cpp
-template <typename Scalar>
+template <ctrlpp_floating_scalar Scalar>
 class biquad;
 ```
 
@@ -22,7 +23,7 @@ class biquad;
 
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
-| `Scalar` | floating-point | Numeric type (`double`, `float`) |
+| `Scalar` | `ctrlpp_floating_scalar` (`std::floating_point`) | Numeric type (`double`, `float`) |
 
 ## Supporting Types
 
@@ -48,7 +49,7 @@ constexpr biquad();
 explicit constexpr biquad(biquad_coeffs<Scalar> c);
 ```
 
-Construct from explicit coefficients, or use one of the factory functions below. The default constructor gives all-zero coefficients and state.
+Construct from explicit coefficients, or use one of the factory functions below. The default constructor gives all-zero coefficients and state. The coefficient constructor checks nothing; only the factories validate. A deduction guide makes `biquad{c}` a `biquad<Scalar>` for a `biquad_coeffs<Scalar> c`.
 
 ## Design Validation: dsp_error
 
@@ -216,7 +217,7 @@ static ctrlpp::expected<biquad, dsp_error> dirty_derivative(Scalar bandwidth_hz,
     Scalar resolution_factor = /* 1/4 */);
 ```
 
-Creates a band-limited differentiator with analog prototype `H(s) = wc*s / (s + wc)`, discretized via the bilinear transform. It acts as a true differentiator (`|H(f)| -> 2*pi*f`) up to the bandwidth `wc = 2*pi*bandwidth_hz`, above which it rolls off. `bandwidth_hz` must lie in the open interval `(0, sample_hz / 2)` and above the [first-order floor](#dirty-derivative-floor) of `Scalar`.
+Creates a band-limited differentiator with analog prototype `H(s) = wc*s / (s + wc)`, discretized via the bilinear transform with `wc` pre-warped to `2 * sample_hz * tan(pi * bandwidth_hz / sample_hz)`, so the digital corner lands at `bandwidth_hz`. It acts as a true differentiator (`|H(f)| -> 2*pi*f`) well below the bandwidth, above which it rolls off. The section is first order: `b2 = a2 = 0`, `b1 = -b0`. `bandwidth_hz` must lie in the open interval `(0, sample_hz / 2)` and above the [first-order floor](#dirty-derivative-floor) of `Scalar`.
 
 ## Methods
 
@@ -226,7 +227,7 @@ Creates a band-limited differentiator with analog prototype `H(s) = wc*s / (s + 
 Scalar process(Scalar x);
 ```
 
-Filters a single sample through the biquad section and returns the output.
+Filters a single sample through the section in transposed direct form II, `y = b0 x + w0`, `w0 = b1 x - a1 y + w1`, `w1 = b2 x - a2 y`, and returns the output.
 
 ### reset
 
@@ -235,7 +236,7 @@ void reset();
 void reset(Scalar value);
 ```
 
-Resets internal state to zero, or initializes the filter state such that a constant input of `value` would produce the corresponding steady-state output.
+Resets internal state to zero, or initializes the filter state such that a constant input of `value` would produce the corresponding steady-state output `value * (b0 + b1 + b2) / (1 + a1 + a2)`. When `|1 + a1 + a2|` is below `6 eps (1 + |a1| + |a2|)`, a pole at or within rounding of `z = 1` with no finite DC gain, `reset(value)` zeroes the state instead.
 
 ### coefficients
 
@@ -253,14 +254,20 @@ template <typename Scalar, std::size_t N>
 class cascaded_biquad;
 ```
 
-Chains N biquad sections in series. Each `process()` call passes the sample through all sections sequentially.
+Chains N biquad sections in series. Each `process()` call passes the sample through all sections sequentially. `Scalar` is unconstrained here, but `biquad<Scalar>` requires `ctrlpp_floating_scalar`.
+
+```cpp
+explicit constexpr cascaded_biquad(std::array<biquad<Scalar>, N> sections);
+```
+
+There is no default constructor.
 
 ### Methods
 
 - `Scalar process(Scalar x)`, filters one sample through all sections
 - `reset()`, resets all sections
-- `reset(Scalar value)`, steady-state initialization propagated through the cascade
-- `biquad<Scalar>& section(std::size_t i)` (and its `const` overload), access individual sections
+- `reset(Scalar value)`, steady-state initialization propagated through the cascade: each section is reset to the output of the one before it, and a section with no finite DC gain (as for `biquad::reset`) passes zero on
+- `biquad<Scalar>& section(std::size_t i)` (and its `const` overload), access individual sections; `i` is not bounds-checked
 
 ## Convenience Design Functions
 
@@ -273,7 +280,7 @@ ctrlpp::expected<cascaded_biquad<Scalar, Order / 2>, dsp_error> make_butterworth
     Scalar sample_hz, Scalar resolution_factor = /* 3/4 */);
 ```
 
-Designs an `Order`-th order Butterworth low-pass filter as a cascade of `Order/2` biquad sections. `cutoff_hz` must lie in the open interval `(0, sample_hz / 2)` and every section above the [coefficient-resolution floor](#coefficient-resolution-floor) of `Scalar`.
+Designs an `Order`-th order Butterworth low-pass filter as a cascade of `Order/2` biquad sections. Section `k` (from 0) is the bilinear low-pass section with `1 / Q_k = 2 cos(theta_k)`, `theta_k = pi (2k + 1) / (2 Order)`, every section pre-warped to the same `cutoff_hz`. Only even orders are available. `cutoff_hz` must lie in the open interval `(0, sample_hz / 2)` and every section above the [coefficient-resolution floor](#coefficient-resolution-floor) of `Scalar`.
 
 ### make_chebyshev1
 
@@ -284,7 +291,33 @@ ctrlpp::expected<cascaded_biquad<Scalar, Order / 2>, dsp_error> make_chebyshev1(
     Scalar sample_hz, Scalar ripple_db, Scalar resolution_factor = /* 3/4 */);
 ```
 
-Designs an `Order`-th order Chebyshev Type I low-pass filter with the specified passband ripple. `cutoff_hz` must lie in the open interval `(0, sample_hz / 2)` with every section above the [coefficient-resolution floor](#coefficient-resolution-floor) of `Scalar`, and `ripple_db` must be finite and strictly positive. The section with the smaller pole radius sets the floor, so it sits above the Butterworth floor of the same order. A design that succeeds carries only finite coefficients.
+Designs an `Order`-th order Chebyshev Type I low-pass filter with the specified passband ripple. `cutoff_hz` must lie in the open interval `(0, sample_hz / 2)` with every section above the [coefficient-resolution floor](#coefficient-resolution-floor) of `Scalar`, and `ripple_db` must be finite and strictly positive. The section with the smaller pole radius sets the floor, so it sits above the Butterworth floor of the same order. The prototype poles are `-sinh(v) sin(theta_k) +- j cosh(v) cos(theta_k)` with `v = asinh(1 / eps) / Order` and `eps = sqrt(10^(ripple_db / 10) - 1)` (formed through `expm1`). Since every order is even, the response starts at a ripple trough, and the first section is scaled so the DC gain is `1 / sqrt(1 + eps^2)` and the passband peak is 0 dB. A design that succeeds carries only finite coefficients.
+
+## vector_biquad
+
+```cpp
+template <ctrlpp_floating_scalar Scalar, std::size_t N>
+    requires (N >= 1)
+class vector_biquad;
+
+template <ctrlpp_floating_scalar Scalar, std::size_t N, std::size_t Sections>
+    requires (N >= 1 && Sections >= 1)
+class vector_cascaded_biquad;
+```
+
+Header: `#include <ctrlpp/dsp/vector_biquad.h>`. Each filters the `N` elements of a `Vector<Scalar, N>` sample through `N` independent channels, a `biquad<Scalar>` or a `cascaded_biquad<Scalar, Sections>` each, so channel `i` sees only element `i`. Both satisfy `vector_discrete_filter<F, Vector<Scalar, N>>`.
+
+```cpp
+constexpr vector_biquad();                                                   // all-zero channels
+explicit constexpr vector_biquad(std::array<biquad<Scalar>, N> channels);
+explicit constexpr vector_cascaded_biquad(std::array<cascaded_biquad<Scalar, Sections>, N> channels);
+
+Vector<Scalar, N> process(Vector<Scalar, N> x);
+void reset();
+void reset(Vector<Scalar, N> value);    // channel i takes biquad::reset(value[i])
+```
+
+`vector_cascaded_biquad` has no default constructor. The factories `vector_biquad::low_pass`, `notch` and `dirty_derivative`, and the free functions `make_vector_butterworth<Order, N>` and `make_vector_chebyshev1<Order, N>`, run the scalar design once and copy it into every channel, so all channels share one design; their signatures and refusals are under [Vector forwarders](#vector-forwarders). Channels with different designs are built from an explicit `std::array`.
 
 ## Usage Example
 
@@ -301,14 +334,15 @@ int main()
     constexpr double sample_hz = 100.0;
     constexpr double cutoff_hz = 10.0;
 
-    // Create a second-order low-pass filter. The factory returns
-    // ctrlpp::expected<biquad, dsp_error>; .value() unwraps in this
-    // exceptions-on snippet (embedded-clean code checks has_value()
-    // and dereferences instead).
-    auto lp = ctrlpp::biquad<double>::low_pass(cutoff_hz, sample_hz).value();
-
-    // Create a 4th-order Butterworth low-pass
-    auto butter4 = ctrlpp::make_butterworth<4>(cutoff_hz, sample_hz).value();
+    auto lp_design = ctrlpp::biquad<double>::low_pass(cutoff_hz, sample_hz);
+    auto butter4_design = ctrlpp::make_butterworth<4>(cutoff_hz, sample_hz);
+    if(!lp_design.has_value() || !butter4_design.has_value())
+    {
+        std::cerr << "the filter design was refused\n";
+        return 1;
+    }
+    auto lp = *lp_design;
+    auto butter4 = *butter4_design;
 
     // Filter a noisy sine wave
     constexpr double signal_hz = 5.0;

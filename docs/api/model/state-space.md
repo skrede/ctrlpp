@@ -14,17 +14,17 @@ Linear state-space model representations for continuous-time and discrete-time s
 
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
-| `Scalar` | floating-point | Numeric type (`double`, `float`) |
-| `NX` | `>= 1` | State dimension |
-| `NU` | `>= 1` | Input dimension |
-| `NY` | `>= 1` | Output dimension |
+| `Scalar` | `ctrlpp_floating_scalar` (`std::floating_point`) | Numeric type (`double`, `float`) |
+| `NX` | `>= 1` (`static_assert`) | State dimension |
+| `NU` | `>= 1` (`static_assert`) | Input dimension |
+| `NY` | `>= 1` (`static_assert`) | Output dimension |
 
 ## continuous_state_space
 
 Represents a continuous-time LTI system: `x_dot = A*x + B*u`, `y = C*x + D*u`.
 
 ```cpp
-template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct continuous_state_space {
     continuous_state_space();
     continuous_state_space(const Matrix<Scalar, NX, NX>& a, const Matrix<Scalar, NX, NU>& b,
@@ -43,7 +43,7 @@ struct continuous_state_space {
 Represents a discrete-time LTI system: `x[k+1] = A*x[k] + B*u[k]`, `y[k] = C*x[k] + D*u[k]`.
 
 ```cpp
-template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct discrete_state_space {
     discrete_state_space();
     discrete_state_space(const Matrix<Scalar, NX, NX>& a, const Matrix<Scalar, NX, NU>& b,
@@ -59,7 +59,7 @@ struct discrete_state_space {
 
 ## Initialization
 
-The default constructor zeroes all four matrices, so `{}` is the zero system. The other constructor takes the matrices in the order `A, B, C, D`; `C` and `D` default to zero, so a model with no feedthrough can omit `D`. The matrices stay public fields and can be assigned after construction:
+The default constructor zeroes all four matrices, so `{}` is the zero system. The other constructor takes the matrices in the order `A, B, C, D`; `C` and `D` default to zero, so a model with no feedthrough can omit `D`. Neither constructor checks the matrices (a non-finite entry is stored as given). The matrices stay public fields and can be assigned after construction:
 
 ```cpp
 ctrlpp::discrete_state_space<double, 2, 1, 1> sys{
@@ -77,6 +77,8 @@ using siso_continuous_state_space = continuous_state_space<S, NX, 1, 1>;
 template <typename S, std::size_t NX>
 using siso_discrete_state_space = discrete_state_space<S, NX, 1, 1>;
 ```
+
+`S` is unconstrained in the alias, but the aliased type still requires `ctrlpp_floating_scalar`.
 
 ## Usage Example
 

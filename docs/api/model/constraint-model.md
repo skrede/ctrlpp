@@ -1,6 +1,6 @@
 # constraint_model
 
-C++20 concepts for nonlinear inequality constraints used in NMPC and NMHE. Defines both path constraints (applied at each time step) and terminal constraints (applied at the final time step).
+C++20 concepts describing nonlinear inequality constraints: path constraints `g(x, u) <= 0` and terminal constraints `h(x_N) <= 0`. No library template requires these concepts. They state the shape of the callables `nmpc_config` accepts in `path_constraint_cb` and `terminal_constraint_cb`, which are stored as `std::function`. NMHE's `path_constraint_cb` takes the state only, `g(x) <= 0`, so it does not have the `constraint_model` shape.
 
 ## Header
 
@@ -23,7 +23,7 @@ concept constraint_model = requires(const G& g,
 };
 ```
 
-Represents NC nonlinear path inequality constraints `g(x, u) <= 0` applied at each stage of the prediction horizon.
+Represents NC nonlinear path inequality constraints `g(x, u) <= 0`, the shape of NMPC's per-stage path constraint.
 
 ### terminal_constraint_model
 
@@ -36,7 +36,7 @@ concept terminal_constraint_model = requires(const H& h,
 };
 ```
 
-Represents NTC nonlinear terminal inequality constraints `h(x_N) <= 0` applied at the final prediction step.
+Represents NTC nonlinear terminal inequality constraints `h(x_N) <= 0`, the shape of NMPC's terminal constraint.
 
 ## What Satisfies Them
 
@@ -104,5 +104,5 @@ int main()
 ## See Also
 
 - [mpc/nmpc](../mpc/nmpc.md)<br/> NMPC using constraint models
-- [mpc/nmhe](../mpc/nmhe.md)<br/> NMHE using constraint models
+- [mpc/nmhe](../mpc/nmhe.md)<br/> NMHE, whose path constraint takes the state only
 - [dynamics-model](dynamics-model.md)<br/> dynamics model concept

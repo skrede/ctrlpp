@@ -1,6 +1,6 @@
 # propagate
 
-State propagation and output computation utilities for discrete and continuous state-space models. Simple convenience functions that apply the state-space equations in a single call.
+State propagation and output computation utilities for state-space models. `propagate` steps a discrete model; `output` evaluates the output equation of a discrete or a continuous model. Each applies the state-space equation in a single call and checks nothing.
 
 ## Header and Alias
 
@@ -46,7 +46,9 @@ output(const continuous_state_space<Scalar, NX, NU, NY>& sys,
        const Vector<Scalar, NU>& u);
 ```
 
-Computes `y = C*x + D*u`.
+Computes `y = C*x + D*u`. There is no continuous `propagate`; integrate a continuous model through [discretize](discretize.md) first.
+
+`x` and `u` must be `Eigen::Matrix` objects of the exact `Vector<Scalar, N>` type: an Eigen expression such as `A * x` does not deduce, so evaluate it into a vector first.
 
 ## Usage Example
 

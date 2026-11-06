@@ -29,7 +29,7 @@ A type satisfies `differentiable_dynamics` when it satisfies `dynamics_model` an
 1. `jacobian_x(x, u)` returning `Matrix<Scalar, NX, NX>`: the Jacobian of `f(x, u)` with respect to `x`.
 2. `jacobian_u(x, u)` returning `Matrix<Scalar, NX, NU>`: the Jacobian of `f(x, u)` with respect to `u`.
 
-When a dynamics model does **not** satisfy this concept, the EKF and MHE automatically compute Jacobians via central finite differences using the `numerical_eps` configuration parameter.
+When a dynamics model does **not** satisfy this concept, the EKF and the linear MHE compute Jacobians by central finite differences, with the step `numerical_eps * max(1, |x_j|)` (`numerical_eps` defaults to `cbrt(eps)`). The EKF reads only `jacobian_x`; the linear MHE reads both, at the midpoint of its window. NMHE uses the Jacobians only through the EKF that updates its arrival cost.
 
 ## Example Model Implementation
 

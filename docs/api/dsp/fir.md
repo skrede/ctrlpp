@@ -1,6 +1,6 @@
 # fir
 
-Finite Impulse Response filter with compile-time tap count. Implements a direct-form FIR convolution using a circular delay line and satisfies the `discrete_filter` concept for composability.
+Finite Impulse Response filter with compile-time tap count. Implements the direct-form FIR convolution `y[n] = sum_i taps[i] * x[n - i]` over a shift-register delay line (each sample shifts the whole line by one) and satisfies the `discrete_filter` concept for composability.
 
 ## Header and Alias
 
@@ -10,7 +10,7 @@ Finite Impulse Response filter with compile-time tap count. Implements a direct-
 | (convenience) | `#include <ctrlpp/dsp.h>` |
 
 ```cpp
-template <typename Scalar, std::size_t N>
+template <ctrlpp_floating_scalar Scalar, std::size_t N>
 class fir;
 ```
 
@@ -18,8 +18,8 @@ class fir;
 
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
-| `Scalar` | floating-point | Numeric type (`double`, `float`) |
-| `N` | `>= 1` | Number of filter taps (coefficients) |
+| `Scalar` | `ctrlpp_floating_scalar` (`std::floating_point`) | Numeric type (`double`, `float`) |
+| `N` | `>= 1` (`static_assert`) | Number of filter taps (coefficients); the filter order is `N - 1` |
 
 ## Constructors
 
@@ -27,7 +27,7 @@ class fir;
 explicit constexpr fir(std::array<Scalar, N> taps);
 ```
 
-Constructs the filter from an array of N tap coefficients. A CTAD deduction guide is provided:
+Constructs the filter from an array of N tap coefficients, with the delay line zeroed. The taps are not checked. There is no default constructor. A CTAD deduction guide is provided:
 
 ```cpp
 fir(std::array<Scalar, N>) -> fir<Scalar, N>;
@@ -41,7 +41,7 @@ fir(std::array<Scalar, N>) -> fir<Scalar, N>;
 Scalar process(Scalar x);
 ```
 
-Shifts the new sample into the delay line and computes the convolution sum. Returns the filtered output.
+Shifts the new sample into the delay line and computes the convolution sum, `taps[0]` weighting the newest sample. Returns the filtered output. The cost is `O(N)` per sample.
 
 ### reset
 

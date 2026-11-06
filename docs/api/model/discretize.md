@@ -27,6 +27,8 @@ struct backward_euler {}; // Backward Euler
 
 ## Functions
 
+Every overload returns a `discrete_state_space` directly, not a `ctrlpp::expected`, and checks nothing: `dt` and `w_c` are used as given, a non-finite matrix entry propagates into the result, and a singular `I - A*dt/2` (Tustin) or `I - A*dt` (backward Euler) yields non-finite matrices. `Scalar` is deduced from both the system and `dt`, so a `float` system takes a `float` sample period.
+
 ### discretize (ZOH, default)
 
 ```cpp
@@ -36,7 +38,7 @@ discretize(const continuous_state_space<Scalar, NX, NU, NY>& sys,
            Scalar dt, zoh = {});
 ```
 
-Discretizes using ZOH via the augmented matrix exponential. Forms the block matrix `[[A*dt, B*dt], [0, 0]]`, computes its matrix exponential, and extracts `Ad` and `Bd`. Output matrices `C` and `D` are passed through unchanged.
+Discretizes using ZOH via the augmented matrix exponential (Van Loan's method). Forms the block matrix `[[A*dt, B*dt], [0, 0]]`, computes its matrix exponential with Eigen's `unsupported/Eigen/MatrixFunctions` module, which the header includes, and extracts `Ad` and `Bd` from the upper blocks. Output matrices `C` and `D` are passed through unchanged.
 
 ### discretize (explicit tag)
 

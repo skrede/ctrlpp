@@ -1,6 +1,6 @@
 # dynamics_model
 
-C++20 concept constraining discrete-time dynamics callables. Used throughout the library to type-check dynamics functions passed to estimators (EKF, UKF, particle filter) and controllers (NMPC, NMHE).
+C++20 concept constraining dynamics callables. The library reads `f(x, u)` as the next state `x[k+1]`, and requires the concept of the dynamics passed to the estimators (EKF, UKF, particle filter, MHE, NMHE) and to NMPC.
 
 ## Header
 
@@ -26,7 +26,7 @@ A type `D` satisfies `dynamics_model<D, Scalar, NX, NU>` when it provides a cons
 1. Accepts a state vector `Vector<Scalar, NX>` and an input vector `Vector<Scalar, NU>`.
 2. Returns something convertible to `Vector<Scalar, NX>` (the next state).
 
-Any callable works: a struct with `operator()`, a lambda, or a function pointer (when wrapped).
+Any callable works: a struct with a `const` `operator()`, a lambda, or a function pointer. The concept checks only the call; it does not check that the result is finite.
 
 ## Example Model Implementation
 
