@@ -213,7 +213,7 @@ attitude filters apply their rotation increments on the right.
 ## References
 
 [1] T. D. Barfoot, "State Estimation for Robotics," 2nd ed., Cambridge
-University Press, 2025.
+University Press, 2024.
 
 [2] K. M. Lynch and F. C. Park, "Modern Robotics: Mechanics, Planning, and
 Control," Cambridge University Press, 2017.
