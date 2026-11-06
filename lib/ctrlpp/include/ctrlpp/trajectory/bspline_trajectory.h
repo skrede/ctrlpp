@@ -139,7 +139,7 @@ private:
     }
 
     // Derivative control points Q_i = deg (P_{i+1} - P_i) / (U_{i+deg+1} - U_{i+1}) over the knot vector without its end knots.
-    // @cite biagiotti2009 -- Sec. 4.5
+    // @cite biagiotti2009 -- Sec. 4.5; App. B.1.4, eq. (B.8)-(B.10), p.476
     static std::pair<std::vector<Scalar>, std::vector<Scalar>> derivative_data(std::vector<Scalar> const& points, std::vector<Scalar> const& U, std::int32_t deg)
     {
         auto const n = static_cast<std::int32_t>(points.size()) - 1;

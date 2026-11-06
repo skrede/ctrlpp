@@ -132,7 +132,7 @@ inline bool build_linear_coefficients(std::vector<std::array<Scalar, 4>>& coeffs
 }
 
 // The moment form of the cubic spline coefficients.
-// @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
+// @cite biagiotti2009 -- Sec. 4.4.3, eq. (4.14)-(4.16), p.175
 template <typename Scalar>
 inline bool build_smoothing_coefficients(std::vector<std::array<Scalar, 4>>& coeffs, std::vector<Scalar> const& pos, std::vector<Scalar> const& h, std::vector<Scalar> const& d,
         std::vector<Scalar> const& s, std::size_t n)

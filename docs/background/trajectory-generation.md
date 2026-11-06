@@ -3,8 +3,7 @@
 Trajectory generation computes time-parametrized motion profiles that
 guide a system from one configuration to another while respecting kinematic
 and dynamic constraints. It is a fundamental component of motion control for
-industrial machines, robots, and autonomous vehicles
-[1, Ch. 1, pp. 1--14].
+industrial machines and robots [1, Ch. 1, pp. 1--12].
 
 This page covers point-to-point motion planning, velocity profiles, polynomial
 trajectories, spline interpolation, and online trajectory generation. The
@@ -16,7 +15,7 @@ comprehensive treatment of trajectory planning for automatic machines.
 The simplest trajectory problem is moving from position $q_0$ to position
 $q_1$ in time $T$, subject to constraints on velocity, acceleration, and
 possibly jerk. The trajectory $q(t)$ must satisfy boundary conditions
-[1, Ch. 3, pp. 49--72]:
+[1, Sec. 2.1, p. 15]:
 
 $$
 q(0) = q_0, \quad q(T) = q_1
@@ -38,7 +37,7 @@ Additional constraints may include:
 
 A cubic polynomial $q(t) = a_0 + a_1 t + a_2 t^2 + a_3 t^3$ has four
 coefficients, sufficient to satisfy position and velocity boundary conditions
-at both endpoints [1, Sec. 3.2, pp. 53--56]:
+at both endpoints [1, Sec. 2.1.4, eq. (2.1)--(2.2), pp. 23--24]:
 
 $$
 \begin{bmatrix} q_0 \\ q_1 \\ v_0 \\ v_1 \end{bmatrix} =
@@ -59,7 +58,7 @@ $$
 A quintic polynomial additionally constrains accelerations at the endpoints,
 so a segment joins its neighbors with continuous acceleration when the
 boundary accelerations match theirs
-[1, Sec. 3.3, pp. 57--62]:
+[1, Sec. 2.1.5, eq. (2.4)--(2.5), pp. 26--27]:
 
 $$
 q(t) = a_0 + a_1 t + a_2 t^2 + a_3 t^3 + a_4 t^4 + a_5 t^5
@@ -71,8 +70,7 @@ at both ends, for eight conditions and eight coefficients.
 
 ### Minimum-Jerk and Minimum-Snap
 
-Higher-order polynomials minimize specific motion derivatives
-[1, Sec. 3.4, pp. 63--66]:
+Higher-order polynomials minimize specific motion derivatives:
 
 - **Minimum-jerk** (5th order): among all motions meeting the position,
   velocity and acceleration conditions at both ends, the quintic minimizes
@@ -92,7 +90,7 @@ polynomial coefficients.
 ### Trapezoidal Velocity Profile
 
 For a rest-to-rest move with $h > 0$ the trapezoidal profile has three
-phases [1, Sec. 3.5, pp. 67--80]:
+phases [1, Sec. 3.2, pp. 62--64]:
 
 1. **Acceleration**: constant acceleration $a_{\max}$ from rest to
    cruise velocity $v_{\max}$
@@ -102,7 +100,7 @@ phases [1, Sec. 3.5, pp. 67--80]:
 The position trajectory is piecewise quadratic-linear-quadratic. The time
 durations of each phase are determined by the displacement $h = q_1 - q_0$,
 maximum velocity $v_{\max}$, and maximum acceleration $a_{\max}$
-[1, Sec. 3.5.1, pp. 68--72]:
+[1, Sec. 3.2.2, eq. (3.8), pp. 65--66]:
 
 $$
 T_a = \frac{v_{\max}}{a_{\max}}, \quad T_v = \frac{h}{v_{\max}} - \frac{v_{\max}}{a_{\max}}, \quad T = T_v + 2 T_a
@@ -117,7 +115,7 @@ same three-phase structure.
 
 The double-S profile limits jerk as well as acceleration, so the acceleration
 is continuous. It has seven phases
-[1, Sec. 3.6, pp. 80--106]:
+[1, Sec. 3.4, pp. 79--80]:
 
 1. Increasing acceleration (jerk $= j_{\max}$)
 2. Constant acceleration ($a_{\max}$)
@@ -130,26 +128,26 @@ is continuous. It has seven phases
 The position trajectory is piecewise: cubic during jerk phases, quadratic
 during constant-acceleration phases, and linear during cruise. The phase
 durations depend on the constraints $v_{\max}$, $a_{\max}$, $j_{\max}$
-and the displacement $h$ [1, Sec. 3.6.2, pp. 85--95].
+and the displacement $h$ [1, Sec. 3.4, eq. (3.17)--(3.27), pp. 80--84].
 
 Degenerate cases arise when the displacement is too small for all phases
 to occur. The cruise phase may vanish, the constant-acceleration phases
 may vanish, or both &mdash; requiring careful case analysis
-[1, Sec. 3.6.3, pp. 96--100].
+[1, Sec. 3.4, pp. 81--84; Sec. 3.4.3, pp. 90--93].
 
 ## Spline Interpolation
 
 When the trajectory must pass through multiple waypoints
 $q_0, q_1, \ldots, q_n$ at times $t_0, t_1, \ldots, t_n$, spline
 interpolation constructs a piecewise polynomial that is globally smooth
-[1, Ch. 4, pp. 107--156].
+[1, Ch. 4, pp. 151--219].
 
 ### Cubic Splines
 
 Cubic splines use third-order polynomials on each interval $[t_i, t_{i+1}]$,
 with continuity of position, velocity, and acceleration at the knots. The
 $n$ segments require $4n$ coefficients, determined by
-[1, Sec. 4.2, pp. 112--120]:
+[1, Sec. 4.4, pp. 166--167]:
 
 - $2n$ interpolation conditions ($q(t_i) = q_i$ at each end of each segment)
 - $n - 1$ velocity continuity conditions
@@ -181,7 +179,7 @@ as $\mu$ approaches 0 the curve approaches the least-squares straight line.
 
 B-splines provide a basis function representation that supports local control:
 moving one control point affects only a few nearby segments. The B-spline
-curve of degree $p$ is [1, Sec. 4.4, pp. 130--140]:
+curve of degree $p$ is [1, Sec. 4.5, eq. (4.40)--(4.41), pp. 194--195]:
 
 $$
 q(t) = \sum_{i=0}^{n} N_{i,p}(t) \, P_i
@@ -196,12 +194,12 @@ points, by de Boor's algorithm rather than by summing basis functions.
 
 Online (real-time) trajectory generation computes trajectories on-the-fly in
 response to changing targets, enabling reactive motion
-[1, Ch. 7, pp. 237--280].
+[1, Sec. 4.6, pp. 208--209].
 
 ### Third-Order Online Planner
 
 A third-order online planner limits velocity, acceleration, and jerk
-[1, Sec. 7.3, pp. 255--270]. When the target changes, it plans a double-S
+[1, Sec. 4.6.1, p. 209]. When the target changes, it plans a double-S
 profile from the current kinematic state $(q, \dot{q}, \ddot{q})$ to the
 target at rest; between target changes each sample evaluates that plan.
 
@@ -220,8 +218,9 @@ the same with velocity and acceleration limits only.
 ## Multi-Axis Synchronization
 
 When multiple axes must reach their targets simultaneously (e.g., a multi-DOF
-robot), the fastest axis determines the total motion time $T$, and slower
-axes are scaled to match [1, Ch. 9, pp. 325--360]:
+robot), the slowest axis determines the total motion time $T$, and the
+other axes are slowed to match [1, Sec. 3.2.3, pp. 66--67; Sec. 5.3,
+pp. 241--243]:
 
 $$
 T = \max_j T_j

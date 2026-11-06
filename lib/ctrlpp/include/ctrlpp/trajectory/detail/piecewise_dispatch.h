@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_TRAJECTORY_DETAIL_PIECEWISE_DISPATCH_H
 
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
-// Machines and Robots", 2009, Ch. 4 (composite trajectories)
+// Machines and Robots", 2009, Ch. 3, Sec. 3.6, p.117-119
 
 #include <array>
 #include <tuple>

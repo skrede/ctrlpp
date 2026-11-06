@@ -4,7 +4,7 @@
 // The Thomas algorithm, and its cyclic variant reduced to two standard solves through the Sherman-Morrison formula.
 // Both refuse a system they cannot tell from a singular one with spline_error::unrepresentable_spline.
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
-// Automatic Machines and Robots", 2009, Sec. 4.4
+// Automatic Machines and Robots", 2009, Sec. 4.4; App. A.5, p.464-466
 
 #include "ctrlpp/trajectory/trajectory_types.h"
 
@@ -75,7 +75,7 @@ void thomas_substitute(std::vector<Scalar> const& b, std::vector<Scalar> const& 
 
 // Sub-diagonal a (a[0] enters only the row scale), diagonal b, super-diagonal c (c[n-1] likewise); the solution overwrites d.
 // b is overwritten with the reduced pivots, and neither b nor d holds a solution on refusal.
-// @cite biagiotti2009 -- Sec. 4.4, tridiagonal system for cubic spline velocities
+// @cite biagiotti2009 -- Sec. 4.4, p.171; App. A.5.1, p.464-465
 template <typename Scalar>
 ctrlpp::expected<void, spline_error> thomas_solve(std::vector<Scalar> const& a, std::vector<Scalar>& b, std::vector<Scalar> const& c, std::vector<Scalar>& d)
 {
@@ -137,7 +137,7 @@ ctrlpp::expected<void, spline_error> sherman_morrison_correct(std::vector<Scalar
 }
 
 // The corners are alpha = A[0][n-1] and beta = A[n-1][0]; b is not modified, and d is left unchanged on refusal.
-// @cite biagiotti2009 -- Sec. 4.4.2, cyclic tridiagonal for periodic BC
+// @cite biagiotti2009 -- Sec. 4.4.2, p.173; App. A.5.2, p.465-466
 template <typename Scalar>
 ctrlpp::expected<void, spline_error> cyclic_thomas_solve(
         std::vector<Scalar> const& a, std::vector<Scalar> const& b, std::vector<Scalar> const& c, std::vector<Scalar>& d, Scalar alpha, Scalar beta)

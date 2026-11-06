@@ -67,7 +67,7 @@ Scalar bspline_basis_degree_zero(std::int32_t i, Scalar t, std::vector<Scalar> c
 }
 
 // Cox-de Boor recursion.
-// @cite biagiotti2009 -- Sec. 4.5
+// @cite biagiotti2009 -- App. B.1.1, p.467
 template <typename Scalar>
 Scalar bspline_basis(std::int32_t i, std::int32_t p, Scalar t, std::vector<Scalar> const& U)
 {

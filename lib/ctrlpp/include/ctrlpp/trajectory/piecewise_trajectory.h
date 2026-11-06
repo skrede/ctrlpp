@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_TRAJECTORY_PIECEWISE_TRAJECTORY_H
 
 // @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
-// Machines and Robots", 2009, Ch. 4 (composite trajectories)
+// Machines and Robots", 2009, Ch. 3, Sec. 3.6, p.117-119
 
 #include "ctrlpp/trajectory/cubic_trajectory.h"
 #include "ctrlpp/trajectory/trajectory_types.h"
@@ -15,7 +15,7 @@
 namespace ctrlpp
 {
 
-// @cite biagiotti2009 -- Sec. 4.1 -- multi-segment trajectory with automatic time offsets
+// @cite biagiotti2009 -- Sec. 3.6, p.117-119
 template <typename Scalar, std::size_t ND, typename... Segments>
     requires(trajectory_segment<Segments, Scalar, ND> && ...)
 class piecewise_trajectory : public detail::piecewise_base<piecewise_trajectory<Scalar, ND, Segments...>, Scalar, trajectory_point<Scalar, ND>, Segments...>
