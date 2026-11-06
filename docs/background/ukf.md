@@ -171,8 +171,8 @@ Two main strategies exist for generating sigma points:
 ### Van der Merwe (Scaled)
 
 Uses three parameters $(\alpha, \beta, \kappa)$ for maximum flexibility. The
-scaling allows placing sigma points arbitrarily close to or far from the mean.
-This is the most widely used variant [3, Sec. 7.3].
+scaling allows placing sigma points arbitrarily close to or far from the mean
+[3, Sec. 7.3].
 
 ### Julier (Original)
 

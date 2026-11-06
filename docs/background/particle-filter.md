@@ -8,8 +8,7 @@ arbitrary distributions and strongly nonlinear systems
 [1, Ch. 15, pp. 461--483].
 
 The bootstrap particle filter was introduced by Gordon, Salmond, and Smith
-in 1993 [2] and has since become the standard approach for low-dimensional
-nonlinear/non-Gaussian estimation problems. ctrlpp's
+in 1993 [2]. ctrlpp's
 [particle_filter](../api/estimation/particle-filter.md) implements it with
 narrower noise models than the general setting below; the section
 [What ctrlpp implements](#what-ctrlpp-implements) states them.
@@ -120,8 +119,9 @@ $$
 N_{\text{eff}} = \frac{1}{\sum_{i=1}^{N_p} \left(w_k^{(i)}\right)^2}
 $$
 
-When $N_{\text{eff}}$ drops below a threshold (typically $N_p / 2$),
-resampling is triggered.
+When $N_{\text{eff}}$ drops below a threshold $N_T$, resampling is triggered
+[3, Sec. V-A, Alg. 3, p. 180]. ctrlpp's default is $N_T = N_p / 2$, set through
+`ess_threshold`.
 
 ### Systematic Resampling
 
@@ -144,7 +144,7 @@ $$
 
 where each $\sigma_d$ is proportional to the spread of the particle cloud in
 coordinate $d$. This prevents the particle set from collapsing to a single
-point. ctrlpp uses $\sigma_d = K E_d N_p^{-1/n_x}$, with $E_d$ the range
+point. ctrlpp uses $\sigma_d = K E_d N_p^{-1/n_x}$ [2, Sec. 4.2, p. 112], with $E_d$ the range
 (maximum minus minimum) of coordinate $d$ over the resampled set and $K$ the
 configured `roughening_scale`; a coordinate with zero range falls back to
 $\sigma_d = K \sqrt{Q_{dd}}$. Roughening is applied only after a resampling.

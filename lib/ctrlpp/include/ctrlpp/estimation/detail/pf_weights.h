@@ -80,7 +80,6 @@ protected:
     }
 
     // Log-sum-exp normalization.
-    // @cite arulampalam2002 -- Arulampalam, Maskell, Gordon & Clapp, "A Tutorial on Particle Filters for Online Nonlinear/Non-Gaussian Bayesian Tracking", 2002, Sec. V-A
     void normalize_log_weights()
     {
         Scalar max_log_w = *std::max_element(this->m_log_weights.begin(), this->m_log_weights.end());

@@ -81,7 +81,7 @@ public:
     }
 
     // @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae", 2005 (notch section)
-    // @cite oppenheim2010dsp -- Oppenheim & Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Sec. 7.2.2, Eq. (7.26) (bilinear pre-warp of the notch frequency)
+    // @cite oppenheim2010dsp -- Oppenheim & Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Sec. 7.2.2, Eqs. (7.18) and (7.26) (bilinear transform with pre-warping)
     static expected<biquad, dsp_error> notch(Scalar freq_hz, Scalar sample_hz, Scalar q, Scalar resolution_factor = detail::notch_resolution_count<Scalar>())
     {
         if(!std::isfinite(q))
