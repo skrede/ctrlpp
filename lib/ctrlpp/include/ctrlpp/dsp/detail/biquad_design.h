@@ -33,7 +33,7 @@ ctrlpp::expected<void, dsp_error> validate_biquad_design(Scalar freq_hz, Scalar 
 }
 
 // The representation error of a section's 1 + a1 + a2 with a1 stored near -2 and a2 near 1: half an ulp of a1 in
-// [1, 2) is eps / 2 and half an ulp of a2 in [1/2, 1) is eps / 4, 3/4 eps in all (oppenheim2010dsp Sec. 6.8,
+// [1, 2) is eps / 2 and half an ulp of a2 in [1/2, 1) is eps / 4, 3/4 eps in all (oppenheim2010dsp Sec. 6.8.3,
 // coefficient quantization with poles near z = 1).
 template <typename Scalar>
 Scalar second_order_resolution_count()

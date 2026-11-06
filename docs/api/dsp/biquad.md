@@ -89,7 +89,7 @@ Every design factory sweeps the coefficients it is about to emit and reports `no
 
 Every design factory refuses a design whose gap its stored coefficients cannot carry: the low-pass family below, the notch and the dirty derivative in their own subsections.
 
-A low-pass section's poles approach `z = 1` as the cutoff ratio `fc / fs` falls, and its behavior lives in the gap `D = 1 + a1 + a2` (the DC gain is `(b0 + b1 + b2) / D`), which shrinks as `(2 pi fc / fs)^2`. Stored in a scalar type with machine epsilon `eps`, `a1` near -2 and `a2` near 1 are each rounded to half an ulp, `eps / 2` and `eps / 4`, so even the best coefficients the type can hold carry an error of up to `3/4 eps` in `D` (Oppenheim and Schafer, 3rd ed., Sec. 6.8, coefficient quantization with poles near `z = 1`). The relative error of the design's gap is then
+A low-pass section's poles approach `z = 1` as the cutoff ratio `fc / fs` falls, and its behavior lives in the gap `D = 1 + a1 + a2` (the DC gain is `(b0 + b1 + b2) / D`), which shrinks as `(2 pi fc / fs)^2`. Stored in a scalar type with machine epsilon `eps`, `a1` near -2 and `a2` near 1 are each rounded to half an ulp, `eps / 2` and `eps / 4`, so even the best coefficients the type can hold carry an error of up to `3/4 eps` in `D` (Oppenheim and Schafer, 3rd ed., Sec. 6.8.3, coefficient quantization with poles near `z = 1`). The relative error of the design's gap is then
 
 ```
 rho = resolution_factor * eps / D

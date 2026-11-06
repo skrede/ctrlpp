@@ -1,7 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_DSP_VECTOR_BIQUAD_H
 #define HPP_GUARD_CTRLPP_DSP_VECTOR_BIQUAD_H
 
-// @cite oppenheim2010dsp -- Oppenheim & Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 6 (DF-II / TDF-II structures)
+// @cite oppenheim2010dsp -- Oppenheim & Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Sec. 6.4, Eq. (6.44) (transposed direct form II)
 
 #include "ctrlpp/dsp/biquad.h"
 #include "ctrlpp/dsp/dsp_types.h"
