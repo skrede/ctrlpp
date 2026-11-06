@@ -15,7 +15,7 @@ step, use only the most recent estimate, and slide the window forward.
 
 At time $k$, MHE estimates the state trajectory over the most recent $N$ time
 steps. For a linear system $x_{i+1} = A x_i + B u_i + w_i$ with measurements
-$z_i = C x_i + v_i$, the decision variables are the initial state $x_{k-N}$
+$z_i = H x_i + v_i$, the decision variables are the initial state $x_{k-N}$
 and the process noise sequence $\{w_{k-N}, \ldots, w_{k-1}\}$
 [1, Sec. 3, pp. 249--253]:
 
@@ -23,7 +23,7 @@ $$
 \min_{x_{k-N}, \, w_{k-N:k-1}} \;
 \lVert x_{k-N} - \bar{x}_{k-N} \rVert^2_{P_{\text{arr}}^{-1}}
 + \sum_{i=k-N}^{k-1} \lVert w_i \rVert^2_{Q^{-1}}
-+ \sum_{i=k-N}^{k} \lVert z_i - C x_i \rVert^2_{R^{-1}}
++ \sum_{i=k-N}^{k} \lVert z_i - H x_i \rVert^2_{R^{-1}}
 $$
 
 $$
@@ -35,6 +35,16 @@ x_{\min} \le x_i \le x_{\max}
 $$
 
 where the weighted norm is $\lVert a \rVert^2_M = a^\top M \, a$.
+
+ctrlpp's `mhe` solves the same problem with every state $x_{k-N}, \ldots, x_k$
+as a decision variable and the process noise eliminated: $w_i$ is replaced by
+the residual $x_{i+1} - A x_i - B u_i$ inside the cost, so the dynamics impose
+no equality constraint. Its cost carries a factor $\tfrac{1}{2}$ on every
+term and a scalar `arrival_cost_weight` $\omega$ on the arrival term,
+$\tfrac{\omega}{2} \lVert x_{k-N} - \bar{x}_{k-N} \rVert^2_{P_{\text{arr}}^{-1}}$.
+The state bounds can be softened with non-negative slacks under a linear
+penalty, and a hard bound $\lvert z_i - H x_i \rvert \le r$ on the
+measurement residuals can be added.
 
 The three terms balance:
 1. **Arrival cost**: consistency with prior information before the window
@@ -55,11 +65,17 @@ As the window slides forward, the arrival cost must be updated:
 - **Arrival cost weighting** $P_{\text{arr}}$: encodes the uncertainty of
   that estimate
 
+Because $z_{k-N}$ is inside the window, the prior must summarize only the
+measurements before it: it is the filter's predicted estimate
+$\hat{x}_{k-N \mid k-N-1}$ and covariance $P_{k-N \mid k-N-1}$, taken before
+the correction with $z_{k-N}$, so that measurement is not counted twice.
+
 ### Exact Update (Linear Systems)
 
 For linear systems without constraints, the exact arrival cost equals the
 Kalman filter covariance: $\bar{x}_{k-N} = \hat{x}_{k-N}^{\text{KF}}$ and
-$P_{\text{arr}} = P_{k-N}^{\text{KF}}$ [1, Sec. 3.2, pp. 251--253].
+$P_{\text{arr}} = P_{k-N}^{\text{KF}}$ [1, Sec. 3.2, pp. 251--253], both the
+predicted quantities at $k-N$.
 
 ### Approximate Update (Nonlinear Systems)
 
@@ -67,6 +83,11 @@ For nonlinear systems, an EKF approximation provides the arrival cost. A
 companion EKF runs alongside the MHE, and its state estimate and covariance
 are used as $\bar{x}$ and $P_{\text{arr}}$ at each window shift
 [2, Sec. 4.3, pp. 403--405].
+
+ctrlpp's `mhe` and `nmhe` both embed an `ekf` for this, also for a linear
+model, where the EKF's recursion is the Kalman filter's. The EKF runs on its
+own: it is corrected with every measurement and never reset to the window
+estimate.
 
 ## Relationship to the Kalman Filter
 
@@ -81,30 +102,40 @@ $$
 
 This is the key advantage of MHE: state constraints are handled naturally
 within the optimization. Physical constraints such as non-negative
-concentrations, bounded temperatures, or positive definite covariances
-can be directly enforced.
+concentrations or bounded temperatures can be directly enforced; ctrlpp's
+`mhe` takes element-wise bounds on the states and bounds on the measurement
+residuals.
+
+With the exact arrival cost above, the finite window loses nothing while no
+bound is active: the window's newest estimate is the Kalman filter's estimate
+at any window length. ctrlpp's `mhe` uses the Kalman filter's prior as its
+arrival cost, and its test suite checks that its newest estimate matches a
+Kalman filter's on an unconstrained linear plant.
 
 ## QP Formulation
 
 For linear dynamics, the MHE problem is a quadratic program. The structure
 is similar to linear MPC with the time direction reversed
-[3, Sec. 4.2, pp. 400--403]:
+[3, Sec. 4.2, pp. 400--403]. ctrlpp poses it in the OSQP form its QP backends
+take:
 
 $$
-\min_z \; \frac{1}{2} z^\top H z + q^\top z
+\min_z \; \frac{1}{2} z^\top P z + q^\top z
+\quad \text{subject to} \quad l \le A_c z \le u
 $$
 
-$$
-\text{subject to} \quad A_{\text{eq}} z = b_{\text{eq}}
-$$
+where $z$ collects the states $x_{k-N}, \ldots, x_k$ and, when the state bounds
+are softened, their lower and upper slacks. Since the dynamics are in the
+cost, there are no equality rows; $A_c$ holds only the state-bound and
+residual-bound rows. $P$ is block tridiagonal over the states, coupling each
+state only to its neighbors, and the same QP backends as linear MPC solve it.
 
-$$
-l \le z \le u
-$$
-
-where $z$ collects the state trajectory and noise variables. The QP has the
-same block-banded sparsity pattern as linear MPC, enabling efficient solution
-with the same solvers.
+ctrlpp's `mhe` accepts any dynamics and measurement callables, but it builds
+the QP from a single linearization of them per solve, at the window's middle
+sample, without the linearization's constant terms: the model it estimates
+with is $x_{i+1} = A x_i + B u_i$, $z_i = H x_i$. It is exact for linear models
+without an offset; see the [mhe limitations](../api/mpc/mhe.md#limitations).
+For a nonlinear model, [NMHE](nmhe.md) keeps the model nonlinear.
 
 ## Convergence and Stability
 
@@ -124,7 +155,8 @@ on the system dynamics and measurement rate.
 - **Window length $N$**: longer windows use more data but increase
   computation. Start with $N = 10$--$20$.
 - **$Q$ and $R$**: same interpretation as in the Kalman filter. $Q$
-  reflects model uncertainty, $R$ reflects measurement noise.
+  reflects model uncertainty, $R$ reflects measurement noise. The estimator
+  weights with their inverses, so both must be invertible.
 - **State bounds**: should reflect true physical constraints, not
   artificially tight bounds (which slow convergence).
 
