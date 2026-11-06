@@ -406,7 +406,7 @@ surfaces moved onto channel 1:
 | `lqi_gain` | `dare_error`, forwarded | the augmented solve's cause |
 | `place`, `place_observer` | `place_error`, **new** | a structural refusal versus a numerical one |
 | `so3::normalize` | `so3_error`, new | that the postcondition was not met at all |
-| `dsp::detail::validate_biquad_design` | `dsp_error` | nothing -- see below |
+| `detail::validate_biquad_design` | `dsp_error` | nothing -- see below |
 
 Two internal helpers still carry a refusal as an engaged `std::optional`, the
 inverted shape described below: the predictive controllers' configuration

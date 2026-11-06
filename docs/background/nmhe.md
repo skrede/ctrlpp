@@ -160,12 +160,12 @@ the window NLP until the backend converges or exhausts its budget.
 | Computation      | $O(n^3)$             | QP                   | NLP                  |
 | Optimality       | Optimal (linear)     | Optimal (linear+box) | Local optimum        |
 | Noise model      | Gaussian             | Gaussian             | Any (via cost)       |
+| Implementation   | Simple               | Moderate             | Complex              |
 
 The table describes the methods. In ctrlpp, `mhe` linearizes a nonlinear
 model once per solve, both estimators bound the states and the measurement
 residuals, only `nmhe` takes a nonlinear (per-state) constraint, and both use
 the fixed quadratic cost above, the Gaussian case.
-| Implementation   | Simple               | Moderate             | Complex              |
 
 ## References
 

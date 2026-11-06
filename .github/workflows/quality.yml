@@ -63,7 +63,7 @@ jobs:
 
   function-size:
     runs-on: ubuntu-24.04
-    name: size gate (functions)
+    name: size gate (functions) and doc snippets
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -117,6 +117,15 @@ jobs:
           flags="-isystem$osqp_export -isystem$osqp_configure -I$nlopt_generated -I$deps/src-nlopt/src/api"
           flags="$flags -I$deps/src-argmin/lib/argmin/include -DCTRLPP_HAS_ARGMIN=1 -DCTRLPP_HAS_OSQP=1 -DCTRLPP_HAS_NLOPT=1"
           echo "CTRLPP_TIDY_EXTRA_ARG=$flags" >> "$GITHUB_ENV"
+
+      # Hosted here: this job has clang 18, Eigen and the pinned backend headers, and the workflow has no path filter.
+      - name: Doc-snippet fixtures
+        if: ${{ !cancelled() }}
+        run: CXX=clang++-18 python3 scripts/check_doc_snippets_test.py
+
+      - name: Doc snippets
+        if: ${{ !cancelled() }}
+        run: python3 scripts/check_doc_snippets.py --compiler clang++-18 --eigen-include /usr/include/eigen3
 
       - name: Function-size fixtures
         if: ${{ !cancelled() }}

@@ -8,6 +8,15 @@ Guides and API reference for the ctrlpp C++20 control library.
 
 ## Guides
 
+- [Guides Overview](guides/README.md)<br/> Every guide, by topic
+  - [Introduction Guides](guides/intro/README.md)<br/> Your first PID, estimator, and MPC
+  - [PID Guides](guides/pid/README.md)<br/> Policy composition and cascade control
+  - [Estimation Guides](guides/estimation/README.md)<br/> Observer-controller patterns
+  - [MPC Guides](guides/mpc/README.md)<br/> Concept-based solver injection
+  - [System Identification Guides](guides/sysid/README.md)<br/> Identify, model, and control workflow
+  - [Design Pattern Guides](guides/patterns/README.md)<br/> Composition, error reporting and numerical behavior
+  - [Trajectory Guides](guides/trajectory/README.md)<br/> Trajectory generation and motion planning
+
 ### Introduction
 
 - [Your First PID](guides/intro/your-first-pid.md)<br/> A minimal PID controller from scratch
@@ -22,6 +31,8 @@ Guides and API reference for the ctrlpp C++20 control library.
 - [Observer-Controller Patterns](guides/estimation/observer-controller.md)<br/> Composing observers with controllers
 - [Sysid Workflow](guides/sysid/workflow.md)<br/> Identify, model, and control
 - [Composition Patterns](guides/patterns/composition.md)<br/> Cross-cutting design patterns
+- [Error Reporting](guides/patterns/error-reporting.md)<br/> The failure and disposition channels, state-health queries, and what `ctrlpp::expected` omits
+- [Numerical Behavior](guides/patterns/numerical-behavior.md)<br/> NaN propagation, numerical guards, and input validation responsibilities
 - [Point-to-Point Motion](guides/trajectory/point-to-point.md)<br/> Choosing the right trajectory profile
 - [Multi-Waypoint Paths](guides/trajectory/multi-waypoint.md)<br/> Splines and B-splines for waypoint sequences
 - [Real-Time Replanning](guides/trajectory/real-time.md)<br/> Online trajectory planners
@@ -31,13 +42,26 @@ Guides and API reference for the ctrlpp C++20 control library.
 
 ### Control
 
+- [Control API Overview](api/control/README.md)<br/>Control module index
 - [PID](api/control/pid/README.md)<br/> Policy-based PID controller
+  - [anti-windup](api/control/pid/anti-windup.md)<br/> Back-calculation, clamping, and conditional integration
+  - [derivative-filter](api/control/pid/derivative-filter.md)<br/> Low-pass filtered derivative term
+  - [setpoint-filter](api/control/pid/setpoint-filter.md)<br/> Setpoint and process variable filtering, and the setpoint weights
+  - [velocity-form](api/control/pid/velocity-form.md)<br/> Incremental (velocity) form PID
+  - [isa-form](api/control/pid/isa-form.md)<br/> ISA standard form (Ti, Td parametrization)
+  - [feed-forward](api/control/pid/feed-forward.md)<br/> Additive feed-forward policy
+  - [rate-limit](api/control/pid/rate-limit.md)<br/> Control signal rate limiting
+  - [performance](api/control/pid/performance.md)<br/> IAE, ISE, ITAE, and oscillation detection
 - [lqr](api/control/lqr.md)<br/> Linear-quadratic regulator
 - [dare](api/control/dare.md)<br/> Discrete algebraic Riccati equation solver
+- [care](api/control/dare.md#care)<br/> Continuous algebraic Riccati equation solver
 - [place](api/control/place.md)<br/> Pole placement
+- [mrac](api/control/mrac.md)<br/> Model reference adaptive controller
+- [l1](api/control/l1.md)<br/> L1 adaptive controller
 
 ### Estimation
 
+- [Estimation API Overview](api/estimation/README.md)<br/>Estimation module index
 - [kalman](api/estimation/kalman.md)<br/> Linear Kalman filter
 - [luenberger](api/estimation/luenberger.md)<br/> Luenberger observer
 - [ekf](api/estimation/ekf.md)<br/> Extended Kalman filter
@@ -50,22 +74,26 @@ Guides and API reference for the ctrlpp C++20 control library.
 
 ### MPC and MHE
 
-- [mpc](api/mpc/mpc.md)<br/> Linear model predictive control (OSQP)
-- [nmpc](api/mpc/nmpc.md)<br/> Nonlinear model predictive control (NLopt)
-- [mhe](api/mpc/mhe.md)<br/> Linear moving horizon estimation (OSQP)
-- [nmhe](api/mpc/nmhe.md)<br/> Nonlinear moving horizon estimation (NLopt)
+- [MPC and MHE API Overview](api/mpc/README.md)<br/>Predictive control and moving-horizon estimation module index
+- [mpc](api/mpc/mpc.md)<br/> Linear model predictive control (OSQP or argmin)
+- [nmpc](api/mpc/nmpc.md)<br/> Nonlinear model predictive control (argmin or NLopt)
+- [mhe](api/mpc/mhe.md)<br/> Linear moving horizon estimation (OSQP or argmin)
+- [nmhe](api/mpc/nmhe.md)<br/> Nonlinear moving horizon estimation (NLopt or argmin)
 - [osqp_solver](api/mpc/osqp-solver.md)<br/> OSQP QP solver backend
 - [argmin_qp_solver](api/mpc/argmin-qp-solver.md)<br/> argmin sparse ADMM QP backend (header-only)
 - [nlopt_solver](api/mpc/nlopt-solver.md)<br/> NLopt NLP solver backend
+- [argmin_solver](api/mpc/argmin-solver.md)<br/> argmin NLP solver backend (header-only)
 
 ### Signal Processing
 
+- [Signal Processing API Overview](api/dsp/README.md)<br/>Signal processing module index
 - [biquad](api/dsp/biquad.md)<br/> IIR second-order section filter
 - [fir](api/dsp/fir.md)<br/>Finite impulse response filter
 - [discrete_filter](api/dsp/discrete-filter.md)<br/>Discrete filter concept
 
 ### System Identification
 
+- [System Identification API Overview](api/sysid/README.md)<br/>System identification module index
 - [rls](api/sysid/rls.md)<br/>Recursive least squares
 - [batch_arx](api/sysid/batch-arx.md)<br/>Batch ARX identification (QR)
 - [recursive_arx](api/sysid/recursive-arx.md)<br/>Recursive ARX identification
@@ -75,10 +103,12 @@ Guides and API reference for the ctrlpp C++20 control library.
 
 ### Lie Groups
 
+- [Lie Groups API Overview](api/lie/README.md)<br/>Lie group module index
 - [so3](api/lie/so3.md)<br/>SO(3) quaternion rotation utilities
 
 ### Model Utilities
 
+- [Model Utilities API Overview](api/model/README.md)<br/>Model utilities module index
 - [state_space](api/model/state-space.md)<br/>Linear state-space model
 - [transfer_function](api/model/transfer-function.md)<br/>Transfer function representation
 - [discretize](api/model/discretize.md)<br/>Continuous-to-discrete conversion
@@ -120,6 +150,10 @@ Guides and API reference for the ctrlpp C++20 control library.
 - [online_planner_3rd](api/trajectory/online-planner-3rd.md)<br/>3rd-order online trajectory planner
 - [synchronize](api/trajectory/synchronize.md)<br/>Multi-axis trajectory synchronization, all-or-nothing and allocation-free
 
+## Limitations
+
+- [Limitations](limitations.md)<br/>Every documented limitation, by module, linked to the page of the API it limits
+
 ## Validation
 
 - [Validation Status](validation.md)<br/>Testing levels and cross-validation against GNU Octave
@@ -148,4 +182,5 @@ Standalone theory and mathematical background for the algorithms in ctrlpp.
 - [Observers Theory](background/observers.md)<br/>State observer design: Luenberger, pole placement, duality
 - [NMPC Theory](background/nmpc.md)<br/>Nonlinear MPC: NLP formulation, direct multiple shooting, terminal constraints
 - [NMHE Theory](background/nmhe.md)<br/>Nonlinear MHE: arrival cost, nonlinear optimization, EKF approximation
+- [Adaptive Control Theory](background/adaptive-control.md)<br/>Model reference adaptive control and L1 adaptive control
 - [SO(3) Theory](background/so3.md)<br/>Special orthogonal group: rotation representations, quaternion algebra, exponential map

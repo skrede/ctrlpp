@@ -1,6 +1,6 @@
 # online_planner_3rd
 
-3rd-order online trajectory planner that generates double-S (jerk-limited) velocity profiles in real time. On each `update(target)`, the planner computes a time-optimal profile from the current state to the target position, respecting `v_max`, `a_max`, and `j_max` constraints. Produces smoother motion than the 2nd-order planner at the cost of slightly longer move times.
+3rd-order online trajectory planner that generates double-S (jerk-limited) velocity profiles in real time. On each `update(target)`, the planner nulls any nonzero acceleration with a jerk phase at `j_max` and then plans a double-S profile in closed form from the state that phase leaves to the target position, respecting `v_max`, `a_max`, and `j_max` constraints. Nulling the acceleration first keeps the replan in closed form, so from a state with nonzero acceleration the plan is generally not the minimum-time one. Produces smoother motion than the 2nd-order planner at the cost of slightly longer move times.
 
 Unlike pre-computed trajectory segments, online planners are stateful filters with no fixed duration and do not satisfy `trajectory_segment`.
 
@@ -122,7 +122,7 @@ static ctrlpp::expected<online_planner_3rd, trajectory_error> create(config cons
 ctrlpp::expected<void, trajectory_error> update(Scalar target);
 ```
 
-Set a new target position and replan from the state the last `sample` recorded, starting at that sample's time. Computes a time-optimal double-S profile from (q, v, a) to (target, 0, 0) respecting `v_max`, `a_max`, and `j_max`. A same-direction move carries the current velocity through the profile (no full-stop dip); a velocity pointing away from the target, or too large to stop in the available distance, is braked to rest first and then replanned. "Too large to stop" is the carry-velocity shape's own displacement test, and the carried speed is exact by construction, so the shape refuses a command the planner admitted only through an arithmetic rejection. Such a state is braked to rest and replanned with `carry_velocity_shape_unavailable` reported.
+Set a new target position and replan from the state the last `sample` recorded, starting at that sample's time. Nulls a nonzero `a` with a jerk phase at `j_max`, then computes a closed-form double-S profile from the resulting state to (target, 0, 0) respecting `v_max`, `a_max`, and `j_max`. A same-direction move carries the current velocity through the profile (no full-stop dip); a velocity pointing away from the target, or too large to stop in the available distance, is braked to rest first and then replanned. "Too large to stop" is the carry-velocity shape's own displacement test, and the carried speed is exact by construction, so the shape refuses a command the planner admitted only through an arithmetic rejection. Such a state is braked to rest and replanned with `carry_velocity_shape_unavailable` reported.
 
 The command is rejected with `trajectory_error::non_finite_input` before any
 planner state changes when the target is NaN or infinite. For an accepted
