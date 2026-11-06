@@ -13,7 +13,7 @@ Linear Quadratic Regulator providing infinite-horizon, finite-horizon, time-vary
 
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
-| `Scalar` | arithmetic type | Numeric type (e.g. `double`, `float`) |
+| `Scalar` | `ctrlpp_floating_scalar` | Floating-point type (e.g. `double`, `float`); the classes and `lqr_gain_continuous` state the constraint, and the Riccati-based functions inherit it from `dare` |
 | `NX` | `std::size_t` | State dimension |
 | `NU` | `std::size_t` | Input dimension |
 
@@ -40,7 +40,7 @@ lqr_gain(const Matrix<Scalar, NX, NX>& A,
 
 Computes the infinite-horizon LQR gain K = (R + B'PB)^{-1} B'PA where P is the stabilizing solution of the DARE.
 
-**The gain returned is the solver's own -- `dare_result::K` -- not a recomputation from P.** The Riccati solve forms this gain inside the verification that accepts P: it applies the same dimension-times-unit-roundoff rank test to `R + B'PB` that the pencil build applies to `R`, checks the result is finite, and forms it at the equilibrated scale. Re-forming it here would have neither guarantee. Without a rank threshold a rank-deficient `R + B'PB` yields a least-squares solution over the leading rank columns, returned as if it were the gain; and at the top of the range the caller-scale sum overflows on poses whose equilibrated answer is an ordinary normal number, where the rank-revealing solve returns a **zero** gain -- no feedback at all -- rather than refusing. Neither failure is visible to a caller who receives it. See [dare](dare.md) for the measured comparison.
+**The gain returned is the solver's own -- `dare_result::K` -- not a recomputation from P.** The Riccati solve forms this gain inside the verification that accepts P: it applies the same dimension-times-unit-roundoff rank test to `R + B'PB` that the symplectic-matrix build applies to `R`, checks the result is finite, and forms it at the equilibrated scale. Re-forming it here would have neither guarantee. Without a rank threshold a rank-deficient `R + B'PB` yields a least-squares solution over the leading rank columns, returned as if it were the gain; and at the top of the range the caller-scale sum overflows on poses whose equilibrated answer is an ordinary normal number, where the rank-revealing solve returns a **zero** gain -- no feedback at all -- rather than refusing. Neither failure is visible to a caller who receives it. See [dare](dare.md) for the measured comparison.
 
 **Rejections carry the Riccati solver's own `dare_error` verbatim.** The gain is a function of that solve and has no failure mode of its own, so it forwards the enumerator rather than restating the cause under a second name -- an unstabilizable pair, a singular state matrix and a non-converged factorization send the caller to fix three different things, and an empty result would have told them none of it. See [dare](dare.md) for the enumerators.
 
@@ -71,7 +71,7 @@ lqr_gain_continuous(const Matrix<Scalar, NX, NX>& A,
                     Method method_tag = {});
 ```
 
-Continuous-time gain `K = R^{-1} B' P` where P solves `A'P + PA - PBR^{-1}B'P + Q = 0`. Reports through `care_error`, forwarding the continuous solver's enumerator.
+Continuous-time gain `K = R^{-1} B' P` where P solves `A'P + PA - PBR^{-1}B'P + Q = 0`. Reports through `care_error`, forwarding the continuous solver's enumerator. `Method` is one of the three method tags [care](dare.md#care) takes (`detail::sign_function_care_method`, the default; `detail::schur_care_method`; `detail::balanced_schur_care_method`); the conditioning policy is always the default `detail::pivot_ratio_conditioning`.
 
 **Both weightings are equilibrated first**, by the same common divisor `ctrlpp::care` applies: the smallest power of two at or above their largest entry. This surface does not go through `ctrlpp::care`; it forms `R^{-1}` and the Hamiltonian itself so it can reuse one factorization for the gain, which makes it a second continuous entry point. Without the same equilibration the two would answer different populations on the same arguments, and a caller cannot be expected to know which of them rescales.
 
@@ -85,7 +85,7 @@ It makes three rejections of its own before calling anything:
 | a rank-deficient `R` | `care_error::singular_r` |
 | a Hamiltonian that overflowed while being assembled | `care_error::non_finite_input` |
 
-The middle one is worth stating explicitly, because this surface forms `R^{-1}` itself through an `LDLT` factorization rather than going through the Hamiltonian build, and **that factorization fails quietly**: its solve zeroes the rank-deficient directions instead of producing infinities. Before the rank test, a zero `R` therefore produced a finite `R^{-1}` of zeros, an entirely finite Hamiltonian describing a plant with no control authority, and a sign-function iteration that stagnated on it -- reported as `sign_function_stagnated`, which sends the caller to look at convergence rather than at the weighting they passed.
+The middle one is worth stating explicitly, because this surface forms `R^{-1}` itself through an `LDLT` factorization rather than going through the Hamiltonian build, and **that factorization fails quietly**: its solve zeroes the rank-deficient directions instead of producing infinities. Without the rank test, a zero `R` would produce a finite `R^{-1}` of zeros, an entirely finite Hamiltonian describing a plant with no control authority, and a sign-function iteration that stagnates on it -- reported as `sign_function_stagnated`, which sends the caller to look at convergence rather than at the weighting they passed.
 
 Past those three, every method makes one further refusal, and it applies to every solve rather than to malformed input:
 
@@ -97,7 +97,7 @@ Past those three, every method makes one further refusal, and it applies to ever
 
 **That verification runs on every accepted solve, under every method tag.** It is not a fallback behind a cheaper check, and it is not a property of the default path: the solver reports success only for a matrix it has substituted back into the equation the caller posed. The consequence a caller sees is that a pose the solver cannot answer accurately is declined rather than answered, and the population that changes most is large common weight scales -- see [numerical behavior](../../guides/patterns/numerical-behavior.md) for which poses those are and why the boundary is where it is.
 
-The two enumerators are separate because they say different things, and neither is a synonym for the other. `sign_function_stagnated` names a Newton iteration behavior: its documented cases are a non-finite scaling factor, a non-contracting step, an unresolvable magnitude, and a budget exhausted. A Schur method runs no Newton iteration, so reporting a failed Schur verification through it would send the caller to look at convergence when nothing converged or failed to. `unverified_solution` says only what happened: a candidate was extracted and could not be certified. A caller who meets it on one tag should try another -- the balanced variant in particular answers common weight rescales that the other two decline.
+The two enumerators are separate because they say different things, and neither is a synonym for the other. `sign_function_stagnated` names a Newton iteration behavior: its documented cases are a non-finite scaling factor, a non-contracting step, an unresolvable magnitude, and a budget exhausted. A Schur method runs no Newton iteration, so reporting a failed Schur verification through it would send the caller to look at convergence when nothing converged or failed to. `unverified_solution` says only what happened: a candidate was extracted and could not be certified. A caller who meets it on one tag can try another.
 
 See [dare](dare.md) for what `care_error::singular_u11` covers; the continuous enumerator has the identical shape as its discrete counterpart.
 
@@ -122,7 +122,7 @@ Two enumerators stay meaningful at any distance from the boundary, because they 
 
 #### Tuning the default tag
 
-`sign_function_care_method` carries one defaulted member. Omitting the tag, or passing a default-constructed one, gives today's behavior exactly.
+`sign_function_care_method` carries one defaulted member.
 
 ```cpp
 struct sign_function_care_method
@@ -131,12 +131,9 @@ struct sign_function_care_method
 
     std::int32_t warmup_iterations;
 };
-
-// Give a badly scaled Hamiltonian more room before the guard arms.
-ctrlpp::detail::sign_function_care_method method;
-method.warmup_iterations = 8;
-auto K = ctrlpp::lqr_gain_continuous<double, 2, 2>(A, B, Q, R, method);
 ```
+
+**Neither `lqr_gain_continuous` nor `care` forwards the tag's value**: both take the tag for its type and run the solve with a default-constructed one, so `warmup_iterations` is `3` whatever the caller sets (see [Limitations](#limitations)). What follows describes the member as the iteration reads it.
 
 `warmup_iterations` is the number of Newton steps taken before the non-contraction guard arms. After the window, a step whose change grows rather than shrinks ends the solve with `care_error::sign_function_stagnated`; inside it, growth is allowed, because the determinantal scaling makes large corrections in the early steps. Raising it trades a later decline for a chance at an answer; lowering it declines sooner.
 
@@ -157,7 +154,7 @@ lqr_finite(const Matrix<Scalar, NX, NX>& A,
            std::size_t horizon);
 ```
 
-Finite-horizon LQR via backward Riccati recursion. Returns gain sequence {K_0, K_1, ..., K_{N-1}} indexed by time step. `Qf` is the terminal state cost.
+Finite-horizon LQR via backward Riccati recursion from `P_N = Qf`. Returns gain sequence {K_0, K_1, ..., K_{N-1}} indexed by time step; `horizon = 0` gives an empty sequence. `Qf` is the terminal state cost. It has no failure channel (see [Limitations](#limitations)).
 
 ### lqr_tv_gains
 
@@ -171,7 +168,7 @@ lqr_tv_gains(const std::vector<Matrix<Scalar, NX, NX>>& As,
              const Matrix<Scalar, NX, NX>& Qf);
 ```
 
-Time-varying LQR via backward Riccati recursion with per-step system and cost matrices. The horizon is the common length of the four sequences; empty sequences give an empty gain sequence. Refuses with:
+Time-varying LQR via backward Riccati recursion from `P_N = Qf` with per-step system and cost matrices. The horizon is the common length of the four sequences; empty sequences give an empty gain sequence. Refuses with:
 
 - `lqr_error::sequence_length_mismatch` when the four sequences hold different counts.
 - `lqr_error::non_finite_input` when any entry of any matrix, `Qf` included, is NaN or infinite.
@@ -188,7 +185,7 @@ lqi_gain(const Matrix<Scalar, NX, NX>& A,
          const Matrix<Scalar, NU, NU>& R);
 ```
 
-LQR with integral action. Augments the state with integral of tracking error and returns `lqi_result` containing partitioned gains Kx (NU x NX) and Ki (NU x NY), or the augmented Riccati solve's `dare_error` verbatim.
+LQR with integral action. Augments the state with the discrete integral of the output, `A_aug = [[A, 0], [-C, I]]` and `B_aug = [[B], [0]]`, solves the augmented problem through `lqr_gain`, and returns `lqi_result` containing partitioned gains Kx (NU x NX) and Ki (NU x NY), or the augmented Riccati solve's `dare_error` verbatim. The augmentation carries no sample-time factor, so the integral weight in `Q_aug` absorbs it; `A_aug` is singular whenever `A` is, which `dare` refuses as `singular_a`.
 
 ### lqr_cost
 
@@ -353,6 +350,16 @@ int main()
     }
 }
 ```
+
+## Limitations
+
+### The finite-horizon recursions do not test their factorization
+
+`lqr_finite` and `lqr_tv_gains` solve `(R + B'P B) K = B'P A` at every step with a column-pivoting QR factorization and no rank test, so a singular `R + B'P B` yields a solution of the rank-deficient system rather than a refusal. `lqr_finite` also tests nothing about its operands: a non-finite `A`, `B`, `Q`, `R` or `Qf` gives non-finite gains. `lqr_tv_gains` refuses non-finite operands and mismatched lengths but not a singular step.
+
+### The sign-function tag's warmup_iterations is not forwarded
+
+`lqr_gain_continuous` and both `care` overloads take the method tag as an argument but do not pass its value on: the sign-function solve always runs with `warmup_iterations = 3`. Setting the member on the tag the caller passes has no effect.
 
 ## See Also
 

@@ -3,8 +3,8 @@
 The Linear Quadratic Regulator (LQR) is the optimal state-feedback controller
 for linear systems with a quadratic cost function. It provides a systematic
 method for computing gain matrices that balance state regulation against
-control effort, with guaranteed stability margins and a closed-form solution
-via the Riccati equation [1, Ch. 12, pp. 671--720].
+control effort, with stability margins guaranteed in continuous time, computed
+from an algebraic Riccati equation [1, Ch. 12, pp. 671--720].
 
 LQR is the foundation of modern optimal control and forms the basis for many
 advanced control strategies including LQG (LQR + Kalman filter), MPC terminal
@@ -47,7 +47,7 @@ P = A^\top P \, A - A^\top P \, B \, (R + B^\top P \, B)^{-1} B^\top P \, A + Q
 $$
 
 This is a matrix fixed-point equation that can be solved iteratively or via
-eigendecomposition methods. The solution exists and is unique when the system
+eigendecomposition methods. A unique stabilizing solution exists when the system
 $(A, B)$ is stabilizable and $(A, Q^{1/2})$ is detectable
 [2, Sec. 3.3, pp. 51--55].
 
@@ -60,9 +60,21 @@ $$
 \begin{bmatrix} A + B R^{-1} B^\top (A^\top)^{-1} Q & -B R^{-1} B^\top (A^\top)^{-1} \\ -(A^\top)^{-1} Q & (A^\top)^{-1} \end{bmatrix}
 $$
 
-The stable invariant subspace of this matrix yields the solution $P$. This approach
-avoids the numerical issues of iterative methods and handles ill-conditioned
-problems robustly.
+The invariant subspace belonging to the eigenvalues inside the unit circle yields
+the solution $P$. ctrlpp's `dare` forms this matrix, computes its real Schur
+decomposition, reorders the eigenvalues inside the unit circle to the leading
+block, and extracts $P = U_{21} U_{11}^{-1}$ from the leading $n$ Schur vectors.
+The matrix contains $(A^\top)^{-1}$, so the method needs an invertible $A$, and
+`dare` refuses a singular one. The extracted $P$ is returned only after an
+estimate of its forward error and its closed-loop spectrum pass the solver's
+checks; a problem too ill-conditioned to pass them is refused rather than
+answered (see [dare](../api/control/dare.md)).
+
+The continuous-time equation $A^\top P + P A - P B R^{-1} B^\top P + Q = 0$ is
+solved by `care` from the Hamiltonian
+$\begin{bmatrix} A & -B R^{-1} B^\top \\ -Q & -A^\top \end{bmatrix}$, whose
+open-left-half-plane invariant subspace yields $P$; by default `care` finds that
+subspace through the matrix sign function rather than a Schur decomposition.
 
 ## Optimal Gain
 
@@ -88,8 +100,9 @@ The LQR has strong stability guarantees [2, Sec. 3.4, pp. 56--60]:
 
 - **Closed-loop stability**: all eigenvalues of $(A - BK)$ lie strictly
   inside the unit circle (for discrete-time systems).
-- **Gain margin**: for continuous-time LQR, the gain margin is at least
-  $[1/2, \infty)$ and the phase margin is at least $60^\circ$.
+- **Gain margin**: for continuous-time LQR with a diagonal $R$, each input
+  channel has a gain margin of at least $[1/2, \infty)$ and a phase margin of at
+  least $60^\circ$.
 - **Robustness**: the LQR provides inherent robustness to model uncertainty,
   though the discrete-time margins are generally less generous than
   continuous-time.
@@ -126,17 +139,21 @@ states [1, Sec. 12.9, pp. 715--718]:
 
 $$
 x_{\text{aug}} = \begin{bmatrix} x_k \\ \xi_k \end{bmatrix}, \qquad
-\xi_{k+1} = \xi_k + T_s (r_k - C x_k)
+\xi_{k+1} = \xi_k + (r_k - C x_k)
 $$
 
 The augmented system is:
 
 $$
-x_{\text{aug}, k+1} = \begin{bmatrix} A & 0 \\ -T_s C & I \end{bmatrix} x_{\text{aug}, k} + \begin{bmatrix} B \\ 0 \end{bmatrix} u_k + \begin{bmatrix} 0 \\ T_s I \end{bmatrix} r_k
+x_{\text{aug}, k+1} = \begin{bmatrix} A & 0 \\ -C & I \end{bmatrix} x_{\text{aug}, k} + \begin{bmatrix} B \\ 0 \end{bmatrix} u_k + \begin{bmatrix} 0 \\ I \end{bmatrix} r_k
 $$
 
-Solving the DARE for this augmented system yields gains for both the state
-feedback and integral action components. The integral states provide the same
+The integrator is a plain running sum: a sample-time factor $T_s$ would only
+rescale $\xi$, and the integral block of the state weight absorbs it. Solving the
+DARE for the regulator part of this system, the pair
+$\left(\begin{bmatrix} A & 0 \\ -C & I \end{bmatrix}, \begin{bmatrix} B \\ 0 \end{bmatrix}\right)$
+that `lqi_gain` forms, yields gains for both the state feedback and integral
+action components, $u_k = -K_x x_k - K_i \xi_k$. The integral states provide the same
 benefit as the I-term in PID: zero steady-state error for step references and
 step disturbances.
 

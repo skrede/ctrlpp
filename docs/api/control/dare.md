@@ -1,6 +1,6 @@
 # dare
 
-Discrete Algebraic Riccati Equation solver using symplectic Schur decomposition. Finds the stabilizing solution P to A'PA - P - A'PB(R + B'PB)^{-1}B'PA + Q = 0. This is the workhorse behind `lqr_gain` and the terminal cost computation in MPC.
+Discrete Algebraic Riccati Equation solver using the real Schur decomposition of the symplectic matrix. Finds the stabilizing solution P to A'PA - P - A'PB(R + B'PB)^{-1}B'PA + Q = 0. This is the workhorse behind `lqr_gain` and the terminal cost computation in MPC. The continuous-time counterpart, [care](#care), is documented on this page too.
 
 ## Header and Alias
 
@@ -9,6 +9,9 @@ Discrete Algebraic Riccati Equation solver using symplectic Schur decomposition.
 | `ctrlpp::dare<Scalar, NX, NU>` | `#include <ctrlpp/control/dare.h>` |
 | `ctrlpp::dare<Scalar, NX, NU>` | `#include <ctrlpp/dare.h>` (convenience) |
 | `ctrlpp::dare_error`, `ctrlpp::dare_result` | `#include <ctrlpp/control/dare_types.h>` |
+| `ctrlpp::care<Scalar, NX, NU>` | `#include <ctrlpp/control/care.h>` |
+| `ctrlpp::care<Scalar, NX, NU>` | `#include <ctrlpp/care.h>` (convenience) |
+| `ctrlpp::care_error`, `ctrlpp::care_result` | `#include <ctrlpp/control/care_types.h>` |
 
 ## Template Parameters
 
@@ -17,17 +20,20 @@ Discrete Algebraic Riccati Equation solver using symplectic Schur decomposition.
 | `Scalar` | `ctrlpp_floating_scalar` | Floating-point type (e.g. `double`, `float`) |
 | `NX` | `std::size_t` | State dimension |
 | `NU` | `std::size_t` | Input dimension |
+| `Cond` | `detail::conditioning_policy`, default `detail::pivot_ratio_conditioning` | How the Schur reordering judges a swap (see [the conditioning policy](#conditioning-policy)) |
 
 ## Functions
 
 ### dare
 
 ```cpp
-template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU,
+          detail::conditioning_policy Cond = detail::pivot_ratio_conditioning>
 ctrlpp::expected<dare_result<Scalar, NX, NU>, dare_error> dare(const Matrix<Scalar, NX, NX>& A,
                                                                const Matrix<Scalar, NX, NU>& B,
                                                                const Matrix<Scalar, NX, NX>& Q,
-                                                               const Matrix<Scalar, NU, NU>& R);
+                                                               const Matrix<Scalar, NU, NU>& R,
+                                                               Cond tag = {});
 ```
 
 Solves the standard DARE. Before forming the 2n x 2n symplectic matrix, it
@@ -116,15 +122,15 @@ threshold on that quantity separates them. The margin this replaced -- a
 counted-operation envelope on the residual -- refused none of the answers in that
 population that had lost more than half their significand.
 
-**The accepted set moved, and it moved inward.** Poses whose answer loses more
-than half the significand are now refused with `arithmetic_limit` where they
-previously returned a value. On the two recorded weight-ratio populations this
-removes 531 of 13,114 accepted rows, and every one of the 531 is confirmed by an
-extended-precision reference to have lost more than half the significand; no row
-that the reference calls correct stopped being accepted, and no row that was
-refused became accepted. A caller who was relying on a returned `P` at a weight
-ratio around ten decades, or on a state weighting whose condition number is
-`1e8` or worse, will now see `arithmetic_limit` instead of an answer that was
+**The accuracy test refuses answers a residual test accepts.** Poses whose
+answer loses more than half the significand are refused with `arithmetic_limit`.
+On the two recorded weight-ratio populations this refuses 531 of the 13,114 rows
+that a counted-operation envelope on the residual accepts, and every one of the
+531 is confirmed by an extended-precision reference to have lost more than half
+the significand. No row the reference calls correct is refused by the accuracy
+test where the envelope accepts it, and no row the envelope refuses is accepted.
+A caller posing a weight ratio around ten decades, or a state weighting whose
+condition number is `1e8` or worse, sees `arithmetic_limit` instead of an answer
 wrong in its eighth digit.
 
 **What the estimate is not.** It is a first-order estimate, not a bound. Its
@@ -172,11 +178,10 @@ homogeneity does not supply is checked directly: the rescaled solution must be
 finite, and it is re-tested for positive semi-definiteness at the scale actually
 returned.
 
-Re-forming the evidence at your scale instead of carrying it is what limited the
-accepted range before. Every magnitude the verification forms is now computed by
-dividing out the operand's largest entry first, so on a pose whose *answer* is an
-ordinary normal number the *evidence* no longer leaves the range -- a comparison
-between two infinities was refusing problems the solver could solve.
+Carrying the evidence rather than re-forming it at your scale is what keeps the
+accepted range wide: re-formed at your scale, the evidence for a pose whose
+*answer* is an ordinary normal number can leave the range, and a comparison
+between two infinities would refuse a problem the solver can solve.
 
 The direct check at your scale is still performed, and every magnitude it forms
 is computed by dividing out the operand's largest entry first, so it neither
@@ -254,7 +259,7 @@ conditioning diagnostics.
 `result->K` is the gain the acceptance decision was made on, and it is not
 equivalent to re-forming the gain from `result->P`. The solve forms it at the
 equilibrated scale and applies the same dimension-times-unit-roundoff rank test
-to `R + B'PB` that the pencil build applies to `R`, then checks the result is
+to `R + B'PB` that the symplectic-matrix build applies to `R`, then checks the result is
 finite; a caller who re-forms it from `P` alone reproduces neither. The gain is
 homogeneous of degree zero in `(P, Q, R)`, so the equilibrated gain **is** the
 caller's gain -- but the caller-scale sum `R + B'PB` leaves the top of the range
@@ -272,25 +277,25 @@ Refusals:
 | --- | --- |
 | `dare_error::non_stabilizable` | fewer than n eigenvalues of the symplectic spectrum lie inside the unit region |
 | `dare_error::non_finite_input` | A, B, Q or R contains NaN/Inf |
-| `dare_error::singular_a` | A is rank-deficient to a scale-relative reciprocal-pivot tolerance, so the `A^{-T}` the pencil build needs does not exist |
-| `dare_error::singular_r` | R is rank-deficient to the same tolerance, so the `R^{-1}` the same pencil build needs for `G = B R^{-1} B'` does not exist. The test is applied to the **equilibrated** weighting, the operand the solve actually inverts, so it also covers a weighting that is nonzero on its own but vanishes against the state weighting -- `Q = 1e300 I` with `R = 1e-300` divides to a weighting that underflows to zero, and relative to the posed problem the input weighting is zero |
+| `dare_error::singular_a` | A is rank-deficient to a scale-relative reciprocal-pivot tolerance, so the `A^{-T}` the symplectic-matrix build needs does not exist (see [Limitations](#limitations)) |
+| `dare_error::singular_r` | R is rank-deficient to the same tolerance, so the `R^{-1}` the same build needs for `G = B R^{-1} B'` does not exist. The test is applied to the **equilibrated** weighting, the operand the solve actually inverts, so it also covers a weighting that is nonzero on its own but vanishes against the state weighting -- `Q = 1e300 I` with `R = 1e-300` divides to a weighting that underflows to zero, and relative to the posed problem the input weighting is zero |
 | `dare_error::singular_u11` | the top-left block of the reordered invariant-subspace basis is singular; P cannot be extracted. **Covers two different situations -- see below** |
 | `dare_error::non_psd_solution` | the extracted P is not positive semi-definite to rounding: a Cholesky factorization of P, scaled by an exact power of two and shifted by a derived multiple of the identity, fails. The check accepts every matrix within one rounding per entry of a positive semi-definite one; see [the definiteness check](../../guides/patterns/numerical-behavior.md#what-the-library-does-guard-against) for the shift and the band it accepts |
 | `dare_error::schur_failed` | the real Schur factorization did not converge |
 | `dare_error::arithmetic_limit` | finite inputs could not produce a verified stabilizing solution at the scalar type's precision. Specifically: the equilibrated answer's estimated relative forward error exceeded `sqrt(eps)`, so it retains less than half the significand; its closed-loop spectrum or gain solve did not verify; a magnitude the equilibrated verification needs could not be formed; the weights overflowed while being equilibrated; the solution overflowed while being rescaled; the rescaled solution failed the positive-semi-definiteness test at its returned scale; the direct check at the caller's scale resolved and refuted the carried claim; the direct check failed to resolve for any reason other than the gain leaving the range at the caller's scale; or the equilibrated and returned gains, both formed, disagreed by more than the counted-operation margin |
 
-A second cause is no longer on that list either: a weighting that vanishes under
-equilibration. That is now `singular_r`, which names the weight ratio the caller
-chose rather than sending them to look at precision. Measured across sixteen
-extreme ratio poses spanning `Q` from `1e150` to `1e308` against `R` from
-`1e-150` to `1e-320`, fifteen moved from `arithmetic_limit` to `singular_r`; no
-pose moved between accepted and declined.
+A weighting that vanishes under equilibration is `singular_r` rather than
+`arithmetic_limit`, which names the weight ratio the caller chose rather than
+sending them to look at precision. Across sixteen extreme ratio poses spanning `Q`
+from `1e150` to `1e308` against `R` from `1e-150` to `1e-320`, fifteen are
+refused as `singular_r`; a rank test on the caller's unequilibrated `R` would have
+passed those fifteen on to `arithmetic_limit`, and no pose's acceptance depends on
+which of the two names it carries.
 
-The one cause that is **no longer** on that list is the gain the check at the
-caller's scale could not form because `R + B'PB` left the range there. That used
-to be a refusal; it is now an absence of evidence with a known cause, and the
-carried claim is what decides. Every *other* magnitude the direct check fails to
-form is still a refusal.
+The list does not include the case where the check at the caller's scale cannot
+form the gain because `R + B'PB` left the range there: that is an absence of
+evidence with a known cause, and the carried claim decides. Every *other*
+magnitude the direct check fails to form is a refusal.
 
 Positive semi-definiteness is tested on both matrices that exist, by the same
 check, and deliberately so. The extraction primitive tests the P the solve produced; when
@@ -363,15 +368,150 @@ Three enumerators report a property of the operands rather than of an iteration 
 ### dare (with cross-weight)
 
 ```cpp
-template <typename Scalar, std::size_t NX, std::size_t NU>
+template <typename Scalar, std::size_t NX, std::size_t NU,
+          detail::conditioning_policy Cond = detail::pivot_ratio_conditioning>
 ctrlpp::expected<dare_result<Scalar, NX, NU>, dare_error> dare(const Matrix<Scalar, NX, NX>& A,
                                                                const Matrix<Scalar, NX, NU>& B,
                                                                const Matrix<Scalar, NX, NX>& Q,
                                                                const Matrix<Scalar, NU, NU>& R,
-                                                               const Matrix<Scalar, NX, NU>& N);
+                                                               const Matrix<Scalar, NX, NU>& N,
+                                                               Cond tag = {});
 ```
 
 DARE with state-input cross-weight N. Transforms to standard form via Q' = Q - NR^{-1}N', A' = A - BR^{-1}N' and delegates to the standard solver. `result->P` is shared by both posings; `result->K` is the gain of the problem the caller posed, `K = K' + R^{-1}N'`, where `K'` is the reduced problem's gain.
+
+Before delegating it refuses on its own: `non_finite_input` when `A`, `B`, `Q`, `R` or `N` holds a NaN or an infinity; `singular_r` when the caller's `R`, unequilibrated, fails the same rank test, since the reduction inverts it first; and `arithmetic_limit` when `Q'`, `A'` or the corrected gain is not finite. Every other refusal is the standard solver's on the reduced problem.
+
+### dare_result
+
+```cpp
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU>
+struct dare_result
+{
+    Eigen::Matrix<Scalar, int(NX), int(NX)> P;
+    Eigen::Matrix<Scalar, int(NU), int(NX)> K;
+    Scalar subspace_separation;
+    bool reorder_complete;
+};
+```
+
+`P` and `K` are described above. `subspace_separation` is the smallest pivot ratio over the Schur swaps, the analogue of LAPACK DTRSEN's SEP: near 1 is well-conditioned. `reorder_complete` is false when a swap was rejected, as LAPACK DTRSEN reports INFO = 1; it is a diagnostic, not an error, since the result was still verified.
+
+### Conditioning policy
+
+`Cond` selects how the Schur reordering judges whether a swap of diagonal blocks is well-conditioned enough to accept. `detail::pivot_ratio_conditioning`, the default and the only implemented policy, rejects a swap by `|R(last, last)| / |R(0, 0)|` of the rank-revealing QR of the Sylvester operator the swap already factorizes. `detail::hager_higham_conditioning` is declared but not implemented, and selecting it fails to compile. A type that is neither does not satisfy `detail::conditioning_policy`, so it is rejected at the call site rather than read as a further matrix argument.
+
+## Continuous-time solver
+
+### care
+
+```cpp
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU,
+          detail::care_solve_method Method = detail::sign_function_care_method,
+          detail::conditioning_policy Cond = detail::pivot_ratio_conditioning>
+ctrlpp::expected<care_result<Scalar, NX>, care_error> care(const Matrix<Scalar, NX, NX>& A,
+                                                           const Matrix<Scalar, NX, NU>& B,
+                                                           const Matrix<Scalar, NX, NX>& Q,
+                                                           const Matrix<Scalar, NU, NU>& R,
+                                                           Method method_tag = {},
+                                                           Cond cond_tag = {});
+```
+
+Solves the continuous algebraic Riccati equation `A'P + PA - PBR^{-1}B'P + Q = 0`
+for its stabilizing solution, from the Hamiltonian
+`H = [[A, -B R^{-1} B'], [-Q, -A']]`. Both weightings are first divided by the
+common power of two `dare` uses; that is a similarity of `H`, so it changes which
+poses have an answer but not the answer, and `P` is multiplied back before it is
+returned.
+
+`Method` selects the solve; each is a tag type in `ctrlpp::detail`, declared in
+`<ctrlpp/detail/care_methods.h>`:
+
+| Tag | Solve |
+| --- | --- |
+| `sign_function_care_method` (default) | Newton iteration with determinantal scaling on the matrix sign of `H`, capped at 40 steps; the stable subspace is read from a rank-revealing QR of `(I - sign(H)) / 2` |
+| `schur_care_method` | real Schur decomposition of `H`, open-left-half-plane eigenvalues reordered to the leading block by the Bai-Demmel swap |
+| `balanced_schur_care_method` | the same, after a DGEBAL-style diagonal balancing of `H` |
+
+`Cond` is the conditioning policy of [the discrete solver](#conditioning-policy);
+the sign-function method has no swap phase and does not read it.
+
+Whatever the method, the extracted `P = U21 U11^{-1}` is accepted only after it
+satisfies the Riccati residual within a counted rounding bound and places the
+closed-loop spectrum strictly in the open left half-plane, both evaluated against
+the caller's own (equilibrated) Hamiltonian. [lqr_gain_continuous](lqr.md)
+describes that verification and the sign-function tag's one member in more detail.
+
+### care (with cross-weight)
+
+```cpp
+template <typename Scalar, std::size_t NX, std::size_t NU,
+          detail::care_solve_method Method = detail::sign_function_care_method,
+          detail::conditioning_policy Cond = detail::pivot_ratio_conditioning>
+ctrlpp::expected<care_result<Scalar, NX>, care_error> care(const Matrix<Scalar, NX, NX>& A,
+                                                           const Matrix<Scalar, NX, NU>& B,
+                                                           const Matrix<Scalar, NX, NX>& Q,
+                                                           const Matrix<Scalar, NU, NU>& R,
+                                                           const Matrix<Scalar, NX, NU>& N,
+                                                           Method method_tag = {},
+                                                           Cond cond_tag = {});
+```
+
+Reduces to standard form with `Q' = Q - N R^{-1} N'` and `A' = A - B R^{-1} N'`
+and delegates to the standard solver; `P` is shared by both posings. Before the
+reduction it refuses `non_finite_input` when `A`, `B`, `Q`, `R` or `N` holds a NaN
+or an infinity, and `singular_r` when the caller's `R` fails the rank test. A
+`Q'` or `A'` that overflows reaches the standard solver and is refused there as
+`non_finite_input`.
+
+### care_error
+
+```cpp
+enum class care_error
+{
+    non_lhp_stabilizable,
+    non_finite_input,
+    singular_r,
+    singular_u11,
+    non_psd_solution,
+    schur_failed,
+    sign_function_stagnated,
+    unverified_solution,
+};
+```
+
+| Enumerator | Condition |
+| --- | --- |
+| `care_error::non_lhp_stabilizable` | fewer than n eigenvalues of `H` lie in the open left half-plane: the Schur reordering placed fewer than n, or the sign-function projector has rank below n. An uncontrollable mode with positive real part brings its reflection into the left half-plane, so such a pair reaches `singular_u11` instead |
+| `care_error::non_finite_input` | `A`, `B`, `Q` or `R` holds a NaN or an infinity, or a quantity the solve forms is not finite: the assembled Hamiltonian, the Schur factors, a sign-function iterate, the extracted `P`, or `P` multiplied back to the caller's scale |
+| `care_error::singular_r` | `R` is rank-deficient to the reciprocal-pivot tolerance `NU * eps` relative to its largest pivot; the standard overload tests the equilibrated `R`, the cross-weight overload the caller's |
+| `care_error::singular_u11` | the top-left block of the stable-subspace basis is singular; as for [`dare_error::singular_u11`](#what-singular_u11-covers-and-what-non_stabilizable-misses), this covers both a pair with no stabilizing solution and a numerical failure to separate the subspace |
+| `care_error::non_psd_solution` | the extracted `P` is not positive semi-definite to rounding |
+| `care_error::schur_failed` | the real Schur factorization did not converge (Schur methods only) |
+| `care_error::sign_function_stagnated` | the sign-function method produced nothing it could verify: a non-finite scaling factor, a step whose change grew after the warm-up, a change magnitude that could not be resolved, the 40-step cap reached, or an extracted `P` that failed the residual or closed-loop check |
+| `care_error::unverified_solution` | a Schur method's extracted `P` failed the residual or closed-loop check |
+
+Only `non_finite_input` and `singular_r` report a property of the operands at any
+distance from the precision's resolution boundary; below it, which refusal an
+input carries is decided by rounding, so branch on `has_value()`.
+
+### care_result
+
+```cpp
+template <ctrlpp_floating_scalar Scalar, std::size_t NX>
+struct care_result
+{
+    Eigen::Matrix<Scalar, int(NX), int(NX)> P;
+    Scalar subspace_separation;
+    bool reorder_complete;
+};
+```
+
+`P` is the stabilizing solution at the caller's scale. `subspace_separation` is the
+minimum pivot ratio across the accepted Schur swaps, and a quiet NaN for the
+sign-function method, which has no swap phase. `reorder_complete` is false when a
+Schur swap was rejected, and always true for the sign-function method. Unlike
+`dare_result`, there is no gain; [lqr_gain_continuous](lqr.md) forms one.
 
 ## Usage Example
 
@@ -407,6 +547,12 @@ int main()
     std::cout << "P =\n" << P_opt->P << "\n";
 }
 ```
+
+## Limitations
+
+### A singular state matrix is refused
+
+The symplectic matrix contains `A^{-T}`, so `dare` refuses an `A` that is rank-deficient to its reciprocal-pivot tolerance with `singular_a`, even when the Riccati equation has a stabilizing solution. A discrete plant with an eigenvalue at zero, such as one carrying a pure one-step delay in its state, cannot be solved, and neither can `lqr_gain`, `lqi_gain` or the MPC terminal cost on such a plant. `care` has no such restriction, since its Hamiltonian contains `A` itself.
 
 ## See Also
 

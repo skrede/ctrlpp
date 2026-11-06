@@ -66,25 +66,34 @@ $b_p$ are unknown, the parameters must be adapted online.
 The Lyapunov-based adaptation law is derived by constructing a positive
 definite function of the tracking error and parameter errors, then choosing
 update rules that guarantee the function is non-increasing
-[1, Sec. 8.4, pp. 342--345]. The resulting discrete-time update equations are:
+[1, Sec. 8.4, pp. 342--345]. The derivation is in continuous time; ctrlpp
+implements the law as a per-sample update with the sample time absorbed into the
+gains:
 
 $$
-\theta_{x,k+1} = \theta_{x,k} - \gamma \, \mathrm{sgn}(b_p) \, e_k \, x_k
+\theta_{x,k+1} = \theta_{x,k} - \gamma_x \, \mathrm{sgn}(b_p) \, b_m \, e_k \, x_k
 $$
 
 $$
-\theta_{r,k+1} = \theta_{r,k} - \gamma \, \mathrm{sgn}(b_p) \, e_k \, r_k
+\theta_{r,k+1} = \theta_{r,k} - \gamma_r \, \mathrm{sgn}(b_p) \, b_m \, e_k \, r_k
 $$
 
-where $\gamma > 0$ is the adaptation gain. Larger $\gamma$ produces faster
+where $\gamma_x, \gamma_r > 0$ are the adaptation gains. The factor $b_m$ is
+the reference model's input gain, standing in for the plant's unknown $b_p$ in
+the gradient; with a single input and $b_m > 0$ it is a positive constant the
+gains absorb, while a negative $b_m$ reverses the update's direction. In
+ctrlpp the error the update reads is $e_k = x_k - x_{m,k+1}$, the plant state
+passed to the call against the reference model already propagated with $r_k$. Larger $\gamma$ produces faster
 adaptation but can cause oscillation; smaller $\gamma$ gives smoother
 convergence but slower tracking. The sign of $b_p$ ensures the adaptation
 moves in the correct direction regardless of the unknown input gain magnitude.
 
-The Lyapunov argument guarantees that $e_k \to 0$ and the parameters remain
-bounded, but does not guarantee convergence of $\theta_x$ and $\theta_r$ to
-their ideal values unless a persistence of excitation condition is satisfied
-[2, Ch. 4, pp. 153--162].
+In continuous time the Lyapunov argument guarantees that the tracking error
+tends to zero and the parameters remain bounded, but does not guarantee
+convergence of $\theta_x$ and $\theta_r$ to their ideal values unless a
+persistence of excitation condition is satisfied [2, Ch. 4, pp. 153--162]. The
+per-sample form inherits that argument only under the assumptions the
+[mrac reference](../api/control/mrac.md#limitations) lists.
 
 ### Robustification
 
@@ -104,14 +113,14 @@ genuine tracking deviation [1, Sec. 8.6.1, pp. 368--371]:
 
 $$
 \theta_{x,k+1} = \begin{cases}
-\theta_{x,k} - \gamma \, \mathrm{sgn}(b_p) \, e_k \, x_k & \text{if } |e_k| > \epsilon_0 \\
+\theta_{x,k} - \gamma_x \, \mathrm{sgn}(b_p) \, b_m \, e_k \, x_k & \text{if } |e_k| > \epsilon_0 \\
 \theta_{x,k} & \text{otherwise}
 \end{cases}
 $$
 
 $$
 \theta_{r,k+1} = \begin{cases}
-\theta_{r,k} - \gamma \, \mathrm{sgn}(b_p) \, e_k \, r_k & \text{if } |e_k| > \epsilon_0 \\
+\theta_{r,k} - \gamma_r \, \mathrm{sgn}(b_p) \, b_m \, e_k \, r_k & \text{if } |e_k| > \epsilon_0 \\
 \theta_{r,k} & \text{otherwise}
 \end{cases}
 $$
@@ -126,14 +135,15 @@ Sigma-modification adds a leaky integrator term that continuously pulls
 the adaptive parameters toward zero [3, Ch. 8, pp. 412--418]:
 
 $$
-\theta_{x,k+1} = \theta_{x,k} - \gamma \left( \mathrm{sgn}(b_p) \, e_k \, x_k + \sigma \, \theta_{x,k} \right)
+\theta_{x,k+1} = \theta_{x,k} - \gamma_x \, \mathrm{sgn}(b_p) \, b_m \, e_k \, x_k - \sigma \, \theta_{x,k}
 $$
 
 $$
-\theta_{r,k+1} = \theta_{r,k} - \gamma \left( \mathrm{sgn}(b_p) \, e_k \, r_k + \sigma \, \theta_{r,k} \right)
+\theta_{r,k+1} = \theta_{r,k} - \gamma_r \, \mathrm{sgn}(b_p) \, b_m \, e_k \, r_k - \sigma \, \theta_{r,k}
 $$
 
-where $\sigma > 0$ is the leakage coefficient. This guarantees bounded
+where $\sigma > 0$ is the leakage coefficient. In ctrlpp the leakage is not
+scaled by the adaptation gain. This guarantees bounded
 parameters regardless of disturbances. The trade-off is a steady-state bias:
 the parameters are pulled away from their ideal values, introducing a
 non-zero steady-state tracking error proportional to $\sigma$.
@@ -145,14 +155,15 @@ error, so that leakage is active only when the error is significant
 [2, Ch. 8, pp. 385--392]:
 
 $$
-\theta_{x,k+1} = \theta_{x,k} - \gamma \left( \mathrm{sgn}(b_p) \, e_k \, x_k + \delta \, |e_k| \, \theta_{x,k} \right)
+\theta_{x,k+1} = \theta_{x,k} - \gamma_x \, \mathrm{sgn}(b_p) \, b_m \, e_k \, x_k - \delta \, |e_k| \, \theta_{x,k}
 $$
 
 $$
-\theta_{r,k+1} = \theta_{r,k} - \gamma \left( \mathrm{sgn}(b_p) \, e_k \, r_k + \delta \, |e_k| \, \theta_{r,k} \right)
+\theta_{r,k+1} = \theta_{r,k} - \gamma_r \, \mathrm{sgn}(b_p) \, b_m \, e_k \, r_k - \delta \, |e_k| \, \theta_{r,k}
 $$
 
-where $\delta > 0$ is the e-modification gain. When the tracking error is
+where $\delta > 0$ is the e-modification gain. With several states ctrlpp uses
+the weighted norm $\sqrt{e^\top W e}$ for $|e_k|$, here and in the dead zone. When the tracking error is
 small (indicating good adaptation), the leakage is negligible and the
 parameters settle near their ideal values. When the error is large (indicating
 possible instability), the leakage becomes significant and pulls parameters
@@ -168,7 +179,9 @@ The robustification mode is a template parameter (one of
 `e_modification`), enabling zero-overhead dispatch via `if constexpr`.
 The `evaluate(x, r)` method computes the control signal and updates the
 adaptive parameters in a single call, matching the one-step-per-call
-convention used throughout ctrlpp.
+convention used throughout ctrlpp. With several inputs the scalar $b_m$ above
+becomes $B_m^\top$, the transpose of the reference model's input matrix, and
+$\mathrm{sgn}(b_p)$ becomes the configured `sign_b` matrix.
 
 ## L1 Adaptive Control
 
@@ -189,10 +202,21 @@ The L1 architecture consists of three components:
   unmodeled dynamics. The filter bandwidth is the sole robustness knob,
   separating it cleanly from the adaptation speed.
 
-This architecture guarantees bounded transient performance (the tracking
-error stays within a computable bound from the first time step) and allows
-systematic trade-off between performance and robustness through the filter
-design [4, Ch. 2, pp. 13--42].
+Under a stability condition on the filter and the uncertainty, the theory shows
+that this architecture bounds the transient (the tracking error stays within a
+computable bound from the first time step) and allows a systematic trade-off
+between performance and robustness through the filter design
+[4, Ch. 2, pp. 13--42].
+
+### ctrlpp Implementation
+
+`l1_controller<Scalar, NX, NU, Filter>` runs a discrete-time state predictor
+$\hat{x}_{k+1} = A_m \hat{x}_k + B (u_{k-1} + \hat{\sigma}_k)$, a gradient
+update $\hat{\sigma} \leftarrow \hat{\sigma} - \Gamma B^\top \tilde{x}$ on the
+prediction error $\tilde{x} = \hat{x} - x$, clamped elementwise to configured
+bounds, and the filtered command $u = C(z)(K_r r - \hat{\sigma})$. It does not
+check the stability condition above, and its update fixes the Lyapunov weight to
+the identity; the [l1 reference](../api/control/l1.md#limitations) states both.
 
 ## References
 

@@ -1,6 +1,6 @@
 # mrac
 
-Model Reference Adaptive Controller with Lyapunov-based adaptation and compile-time robustification policy selection. The controller tracks a user-supplied discrete-time reference model by adapting state-feedback and feedforward gain matrices online. Supports SISO (NX=NU=1) and MIMO configurations with matrix adaptation gains. Robustification modes (dead-zone, sigma-modification, e-modification) prevent parameter drift under noise or unmodeled dynamics.
+Model Reference Adaptive Controller with gradient adaptation and compile-time robustification policy selection. The controller tracks a user-supplied discrete-time reference model by adapting state-feedback and feedforward gain matrices online. Supports SISO (NX=NU=1) and MIMO configurations with matrix adaptation gains. Robustification modes (dead-zone, sigma-modification, e-modification) prevent parameter drift under noise or unmodeled dynamics.
 
 ## Header and Alias
 
@@ -12,10 +12,10 @@ Model Reference Adaptive Controller with Lyapunov-based adaptation and compile-t
 
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
-| `Scalar` | arithmetic type | Numeric type (e.g. `double`, `float`) |
+| `Scalar` | `ctrlpp_floating_scalar` | Floating-point type (e.g. `double`, `float`) |
 | `NX` | `std::size_t`, default `1` | State dimension |
 | `NU` | `std::size_t`, default `1` | Input dimension |
-| `Robustification` | policy tag, default `no_robustification` | Robustification mode (`no_robustification`, `dead_zone`, `sigma_modification`, `e_modification`) |
+| `Robustification` | policy tag, default `no_robustification` | Robustification mode (`no_robustification`, `dead_zone`, `sigma_modification`, `e_modification`). Any other type with a nested `config` (or `config<Scalar>`) compiles and adapts nothing. |
 
 ## Type Aliases
 
@@ -30,7 +30,7 @@ using theta_r_type = Matrix<Scalar, NU, NU>;
 ## Config: mrac_config
 
 ```cpp
-template <typename Scalar, std::size_t NX, std::size_t NU,
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU,
           typename Robustification = no_robustification>
 struct mrac_config;
 ```
@@ -40,18 +40,25 @@ Header: `#include <ctrlpp/control/mrac_config.h>`
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `reference_model` | `discrete_state_space<Scalar, NX, NU, NX>` | zero | Discrete-time reference model (A_m, B_m, C_m, D_m) |
-| `gamma_x` | `Matrix<Scalar, NX, NX>` | zero | SPD adaptation gain for state parameters (user must set; SPD not enforced) |
-| `gamma_r` | `Matrix<Scalar, NU, NU>` | zero | SPD adaptation gain for reference parameters (user must set; SPD not enforced) |
-| `sign_b` | `Matrix<Scalar, NU, NU>` | Identity | Sign-definite part of high-frequency gain matrix |
+| `gamma_x` | `Matrix<Scalar, NX, NX>` | zero | SPD adaptation gain for state parameters (user must set; SPD not enforced; the zero default disables the gradient term) |
+| `gamma_r` | `Matrix<Scalar, NU, NU>` | zero | SPD adaptation gain for reference parameters (user must set; SPD not enforced; the zero default disables the gradient term) |
+| `sign_b` | `Matrix<Scalar, NU, NU>` | Identity | Sign-definite part of the plant's input gain, applied on the left of the update |
 | `theta_x_0` | `Matrix<Scalar, NU, NX>` | zero | Initial state parameter estimate |
 | `theta_r_0` | `Matrix<Scalar, NU, NU>` | zero | Initial reference parameter estimate |
 | `x_model_0` | `Vector<Scalar, NX>` | zero | Initial reference model state |
-| `W` | `Matrix<Scalar, NX, NX>` | Identity | Error weight matrix for weighted norm in robustification (defaults to identity for standard Euclidean norm) |
-| `robustification` | `Robustification::config` (`Robustification::config<Scalar>` for `dead_zone`, `sigma_modification` and `e_modification`) | &mdash; | Robustification options (see below) |
+| `W` | `Matrix<Scalar, NX, NX>` | Identity | Weight of the error norm `sqrt(e' W e)` that `dead_zone` and `e_modification` read (identity gives the Euclidean norm) |
+| `robustification` | `Robustification::config` (`Robustification::config<Scalar>` for `dead_zone`, `sigma_modification` and `e_modification`) | value-initialized | Robustification options (see below); the `threshold`, `sigma` and `delta` fields default to zero |
 
-The adaptation gains `gamma_x` and `gamma_r` must be symmetric positive definite for Lyapunov stability guarantees. Larger values give faster adaptation but may cause oscillation. The `sign_b` matrix captures the sign structure of the unknown plant input matrix; for most applications with positive-definite B_p, the default identity suffices.
+The adaptation gains `gamma_x` and `gamma_r` are meant to be symmetric positive definite, as the Lyapunov argument behind the law takes them; neither is checked. Larger values give faster adaptation but may cause oscillation. The `sign_b` matrix captures the sign structure of the unknown plant input matrix; for most applications with positive-definite B_p, the default identity suffices.
 
-**Adaptation law assumptions.** The parameter update projects the tracking error through `B_m^T` only. This is the Lyapunov gradient `B_m^T P e` with `P = I`, which is exact when the reference model is chosen so that `A_m^T + A_m` is negative definite (`P = I` solves `A_m^T P + P A_m = -Q`). For a general stable `A_m`, a different `P` would be required; no configurable `P` weighting is provided. The update also carries no explicit `dt` factor, so `gamma_x` and `gamma_r` absorb the sample time: rescale them proportionally if the sample rate changes.
+With `e` the tracking error after the reference model has been propagated, the update is
+
+```
+theta_x -= sign_b * (B_m^T e) * x^T * gamma_x  [+ leakage]
+theta_r -= sign_b * (B_m^T e) * r^T * gamma_r  [+ leakage]
+```
+
+where `B_m` is `reference_model.B` and the leakage term is the robustification's (below). The assumptions this law carries are listed under [Limitations](#limitations).
 
 ## Robustification Modes
 
@@ -59,9 +66,9 @@ Robustification prevents unbounded parameter drift caused by noise or unmodeled 
 
 ### Dead-Zone (dead_zone)
 
-Freezes adaptation when the tracking error norm falls below a threshold, preventing drift from measurement noise in steady state.
+Freezes adaptation when the weighted tracking error norm `sqrt(e' W e)` is at or below a threshold, preventing drift from measurement noise in steady state.
 
-**Config field:** `robustification.threshold` (Scalar)<br/> error norm below which adaptation is frozen.
+**Config field:** `robustification.threshold` (Scalar)<br/> error norm at or below which adaptation is frozen.
 
 **When to use:** Known noise bound. Set threshold slightly above the expected noise level. Most aggressive at preventing small-signal drift, but requires a noise bound estimate.
 
@@ -76,7 +83,7 @@ cfg.robustification.threshold = 0.01;
 
 ### Sigma-Modification (sigma_modification)
 
-Adds a leakage term proportional to the current parameter values, gradually decaying parameters toward zero when the adaptation gradient is small.
+Subtracts `sigma * theta` from each parameter matrix every cycle, decaying the parameters toward zero when the adaptation gradient is small.
 
 **Config field:** `robustification.sigma` (Scalar)<br/> leakage rate (typical range 0.001--0.1).
 
@@ -93,7 +100,7 @@ cfg.robustification.sigma = 0.01;
 
 ### E-Modification (e_modification)
 
-Adds a leakage term proportional to both the parameter values and the tracking error norm, giving stronger leakage when the error is large and vanishing leakage at equilibrium.
+Subtracts `delta * sqrt(e' W e) * theta` from each parameter matrix every cycle, giving stronger leakage when the error is large and vanishing leakage at equilibrium.
 
 **Config field:** `robustification.delta` (Scalar)<br/> error-proportional leakage gain.
 
@@ -116,7 +123,7 @@ cfg.robustification.delta = 0.05;
 explicit mrac_controller(const config_type& cfg);
 ```
 
-Constructs the controller from a configuration struct. Stores the reference model and initializes adapted parameters to their initial values.
+Constructs the controller from a configuration struct. Stores the configuration and initializes the reference-model state and the adapted parameters to `x_model_0`, `theta_x_0` and `theta_r_0`. Nothing is validated; a non-finite initial value is reported by the first `evaluate`.
 
 ### evaluate
 
@@ -124,7 +131,7 @@ Constructs the controller from a configuration struct. Stores the reference mode
 expected<input_type, mrac_step_error> evaluate(const state_type& x, const input_type& r);
 ```
 
-Computes the control output `u = theta_x * x + theta_r * r` and updates the adapted parameter matrices using the Lyapunov-based adaptation law. Call once per time step. The reference model is propagated internally. On success the result carries the control vector.
+Computes the control output `u = theta_x * x + theta_r * r` from the parameters held before the cycle, then propagates the reference model and updates the adapted parameter matrices by the law above. Call once per time step. On success the result carries the control vector.
 
 The cycle is classified before any member is written, so a rejected cycle leaves the reference-model state, the tracking error and both parameter matrices bitwise unchanged, and a following valid cycle produces exactly what it would have produced had the rejected one never been attempted.
 
@@ -136,10 +143,11 @@ The enumerators follow the adaptation's own data flow, so the cause named is alw
 
 | Enumerator | Cause | Where the caller repairs it |
 |---|---|---|
-| `non_finite_reference_state` | The internal reference-model state is already non-finite. It is the root cause whenever it holds: the tracking error is the plant state minus this, so it poisons both parameter matrices on the following cycle. | The reference model or its initial condition. |
-| `non_finite_parameters` | An adaptive parameter matrix is already non-finite. Permanent until `reset`, because nothing re-derives it. | The adaptation gains or the initial parameters. |
+| `non_finite_reference_state` | The internal reference-model state is already non-finite. It is the root cause whenever it holds: the tracking error is the plant state minus this, so it would poison both parameter matrices. A committed cycle never leaves it non-finite, so this traces to a non-finite `x_model_0`. | The initial reference-model state. |
+| `non_finite_parameters` | An adaptive parameter matrix is already non-finite. Permanent until `reset`, because nothing re-derives it. A committed cycle never leaves them non-finite, so this traces to a non-finite `theta_x_0` or `theta_r_0`. | The initial parameters. |
 | `non_finite_state` | The supplied plant state has a non-finite component. | The sensor or estimator. |
 | `non_finite_reference` | The supplied reference command has a non-finite component. | The command generator -- a different subsystem from the one that measures the plant. |
+| `non_finite_result` | The cycle's own arithmetic produced a non-finite value: the propagated reference-model state, the tracking error, the command, the projected error `B_m^T e` or either updated parameter matrix. Nothing is committed. A non-finite reference model and finite gains whose product overflows end here. | The reference model, the adaptation gains or the magnitude of the arguments. |
 
 ### health
 
@@ -147,9 +155,9 @@ The enumerators follow the adaptation's own data flow, so the cause named is alw
 mrac_health health() const;
 ```
 
-Reports whether the controller is still carrying non-finite state from an earlier cycle. Latches until `reset` restores the configured initial parameters.
+Reports whether the controller is carrying non-finite state. Latches until `reset` restores the configured initial parameters.
 
-A **rejected cycle does not set it**: a rejection mutates nothing. The routes in are the non-fallible ones -- a non-finite reference model, initial parameter matrix or initial reference state supplied at construction -- and finite-but-extreme gains whose product overflows.
+It is set by the cycle that is refused with `non_finite_reference_state` or `non_finite_parameters`. A committed cycle never leaves the carried state non-finite, so the only route in is a non-finite `x_model_0`, `theta_x_0` or `theta_r_0` supplied at construction. A cycle refused on its arguments (`non_finite_state`, `non_finite_reference`) or on its own arithmetic (`non_finite_result`) does not set it.
 
 ### theta_x
 
@@ -189,7 +197,7 @@ Returns a const reference to the current reference model state vector.
 void reset();
 ```
 
-Resets adapted parameters and model state to the initial values from the config.
+Resets adapted parameters and model state to the initial values from the config, the tracking error to zero and `health()` to `mrac_health::ok`.
 
 ## Usage Examples
 
@@ -317,6 +325,20 @@ int main()
     }
 }
 ```
+
+## Limitations
+
+### The adaptation fixes the Lyapunov weight to the identity
+
+The update projects the tracking error through `B_m^T` only: it is the gradient `B_m^T P e` with the Lyapunov weight `P` fixed to the identity. For the discrete-time reference model the controller takes, `P = I` is a valid Lyapunov weight exactly when `I - A_m^T A_m` is positive definite, that is when the spectral norm of `reference_model.A` is below one. A stable `A_m` outside that set needs a different `P`; no configurable `P` weighting is provided, and the condition is not checked.
+
+### The update carries no sample-time factor
+
+The update has no `dt` factor, so `gamma_x` and `gamma_r` absorb the sample time: rescale them proportionally if the sample rate changes. It is not normalized by the signal magnitude either, so the step it takes grows with the square of the state and reference magnitudes, and the gains are chosen for the signal range expected.
+
+### MIMO adaptation assumes the reference input matrix is the plant's up to a positive scalar
+
+The gradient the decrease argument needs is `B_p^T P e`, with `B_p` the plant's input matrix, but the configuration has no plant input matrix and the update uses `reference_model.B` in its place. Writing `B_m = B_p K_r*`, the update direction differs from the gradient by `K_r*^T`. For a single input `B_m^T e` is `b_m e`, a positive multiple of the error the gains absorb when `b_m > 0`, with `sign_b` carrying the sign of the plant's input gain; a negative `b_m` reverses the update's direction. With several inputs the decrease argument holds only when `reference_model.B` equals the plant input matrix times a positive scalar; for any other `B_m` the argument does not cover the update, though the adaptation may still converge.
 
 ## See Also
 

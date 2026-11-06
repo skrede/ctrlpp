@@ -1,6 +1,6 @@
 # place
 
-Pole placement via Ackermann's formula for single-input systems. Computes a state-feedback gain K such that the eigenvalues of (A - BK) match the desired closed-loop poles. Also provides a dual `place_observer` function for computing observer gains via the duality (A', C') -> L'.
+Pole placement via Ackermann's formula for single-input systems. Computes a state-feedback gain K that places the eigenvalues of (A - BK) at the desired closed-loop poles, to the accuracy the controllability matrix's conditioning allows (see [Limitations](#limitations)). Also provides a dual `place_observer` function for computing observer gains via the duality (A', C') -> L'.
 
 ## Header and Alias
 
@@ -14,7 +14,7 @@ Pole placement via Ackermann's formula for single-input systems. Computes a stat
 
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
-| `Scalar` | arithmetic type | Numeric type (e.g. `double`, `float`) |
+| `Scalar` | `ctrlpp_floating_scalar` | Floating-point type (e.g. `double`, `float`) |
 | `NX` | `std::size_t` | State dimension |
 | `NU` | `std::size_t` | Input dimension (must be 1 for `place`) |
 
@@ -31,7 +31,13 @@ place(const Matrix<Scalar, NX, NX>& A,
       Scalar conj_tol_scale = Scalar{2} * Scalar{NX});
 ```
 
-Computes K such that eig(A - BK) = desired_poles using Ackermann's formula. Complex poles must appear in conjugate pairs. A pole counts as real, and two poles as a conjugate pair, within `conj_tol_scale` times machine epsilon times the pole magnitude (floored at epsilon); the default `2 * NX` reflects the rounding that accumulates across the NX poles.
+Computes K intended to give eig(A - BK) = desired_poles, by Ackermann's formula
+
+```
+K = e_n^T C^{-1} alpha(A),    C = [B, AB, ..., A^{n-1} B]
+```
+
+where `alpha` is the monic polynomial whose roots are `desired_poles`, its coefficients expanded from the poles and `alpha(A)` evaluated by Horner's method. `C^{-1}` is formed from a column-pivoting Householder QR factorization of the controllability matrix. Complex poles must appear in conjugate pairs. A pole counts as real, and two poles as a conjugate pair, within `conj_tol_scale` times machine epsilon times the pole magnitude (floored at epsilon); the default `2 * NX` reflects the rounding that accumulates across the NX poles.
 
 Refusals, checked in order:
 
@@ -40,7 +46,7 @@ Refusals, checked in order:
 | `NU > 1` | `place_error::multi_input_not_supported` |
 | a matrix entry, a pole component or `conj_tol_scale` is NaN or infinite | `place_error::non_finite_input` |
 | the pole set is not closed under conjugation | `place_error::poles_not_conjugate_symmetric` |
-| the controllability matrix is rank-deficient | `place_error::uncontrollable_pair` |
+| the controllability matrix is rank-deficient to Eigen's default column-pivoting QR rank threshold | `place_error::uncontrollable_pair` |
 
 ### place_observer
 
@@ -117,6 +123,12 @@ int main()
     std::cout << "Closed-loop eigenvalues:\n" << es.eigenvalues() << "\n";
 }
 ```
+
+## Limitations
+
+### The gain is not checked against the requested poles
+
+`place` refuses a controllability matrix only when the QR factorization reports it rank-deficient. A controllable pair whose controllability matrix is badly conditioned passes that test, and the gain computed through its inverse can place the closed-loop eigenvalues far from the requested ones; `place` does not compute the achieved eigenvalues or report the conditioning, so such a gain is returned as a success. On the six-state plant `A = diag(0.90, 0.89, ..., 0.85)`, `B` all ones, asked for the real poles `0.50, 0.52, ..., 0.60`, `place` returns a gain of norm `1.5e6` whose closed-loop eigenvalues lie up to `0.10` from the requested ones. Computing `eig(A - BK)`, as the usage example above does, is the caller's check.
 
 ## See Also
 
