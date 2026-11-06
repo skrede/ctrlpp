@@ -26,13 +26,13 @@ Single-segment point-to-point motion primitives with analytical velocity profile
 
 ## Polynomial Paths and Trajectories
 
-Polynomial motion primitives defined by boundary conditions on position and derivatives.
+Polynomial motion primitives. The paths are normalized rest-to-rest motion laws on `[0, 1]`; the trajectories take boundary conditions on position and its derivatives.
 
-- [cubic-path](cubic-path.md)<br/> Cubic polynomial path (position + velocity BCs)
+- [cubic-path](cubic-path.md)<br/> Normalized cubic motion law (zero end velocity)
 - [cubic-trajectory](cubic-trajectory.md)<br/>Cubic polynomial trajectory (time-parametrized)
-- [quintic-path](quintic-path.md)<br/>Quintic polynomial path (position + velocity + acceleration BCs)
+- [quintic-path](quintic-path.md)<br/>Normalized quintic motion law (zero end velocity and acceleration)
 - [quintic-trajectory](quintic-trajectory.md)<br/>Quintic polynomial trajectory
-- [septic-path](septic-path.md)<br/>Septic polynomial path (up to jerk BCs)
+- [septic-path](septic-path.md)<br/>Normalized septic motion law (zero end velocity, acceleration and jerk)
 - [septic-trajectory](septic-trajectory.md)<br/>Septic polynomial trajectory
 - [harmonic-path](harmonic-path.md)<br/>Harmonic (sinusoidal) path segment
 - [cycloidal-path](cycloidal-path.md)<br/>Cycloidal path segment

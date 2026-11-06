@@ -57,7 +57,9 @@ public:
     // The cycle is classified before any member is written, so a rejected cycle leaves every member bitwise unchanged.
     // The raw adaptation update is kept so its finiteness can be observed: Eigen's maxi and mini return the left operand
     // when the comparison is false (Eigen 3.4.1, Core/MathFunctions.h), so a finite projection bound replaces an
-    // infinity invisibly downstream, while a NaN passes through.
+    // infinity invisibly downstream, while a NaN passes through. The update is the gradient B^T P x_tilde specialized to
+    // P = I, a valid Lyapunov weight for the discrete-time predictor only when I - A_m^T A_m is positive definite; it
+    // carries no dt factor, so gamma absorbs the sample time.
     expected<input_type, l1_step_error> evaluate(const state_type& x, const input_type& r)
     {
         if(const auto step = check_step(x, r); !step)

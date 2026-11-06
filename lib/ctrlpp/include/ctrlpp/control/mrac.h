@@ -63,8 +63,9 @@ public:
 
     // The cycle is classified before any member is written, so a rejected cycle leaves every member bitwise
     // unchanged. The adaptation only accumulates into the parameters, so one admitted non-finite sample would be
-    // permanent. The gradient is B^T P e specialized to P = I, exact when A_m^T + A_m is negative definite; it carries
-    // no dt factor, so gamma_x and gamma_r absorb the sample time.
+    // permanent. The gradient is B^T P e specialized to P = I, a valid Lyapunov weight for the discrete-time reference
+    // model only when I - A_m^T A_m is positive definite; it carries no dt factor, so gamma_x and gamma_r absorb the
+    // sample time.
     expected<input_type, mrac_step_error> evaluate(const state_type& x, const input_type& r)
     {
         if(const auto step = check_step(x, r); !step)

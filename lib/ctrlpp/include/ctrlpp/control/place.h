@@ -3,7 +3,7 @@
 
 // Ackermann's formula K = e_n^T C_ctrl^{-1} alpha(A): transform (A, B) into controller canonical form, assign the
 // desired characteristic polynomial alpha(s), and transform the gain back.
-// @cite kautsky1985 -- Kautsky, Nichols & Van Dooren, "Robust Pole Assignment in Linear State Feedback", 1985
+// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems: Theory and Design", 1997, Sec. 4.3, Eq. (4.14), p. 126
 // @cite franklin2015 -- Franklin, Powell & Emami-Naeini, "Feedback Control of Dynamic Systems", 2015, Ch. 7 (Ackermann's formula)
 
 #include "ctrlpp/control/place_types.h"

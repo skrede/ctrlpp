@@ -10,7 +10,7 @@ Choosing the right trajectory profile for single-segment moves.
 | [Quintic](../../api/trajectory/quintic-trajectory.md) | C2 | pos + vel + acc BCs | Smooth motion with set boundary accelerations |
 | [Septic](../../api/trajectory/septic-trajectory.md) | C3 | pos + vel + acc + jerk BCs | Ultra-smooth when jerk matters |
 | [Trapezoidal](../../api/trajectory/trapezoidal-trajectory.md) | C1 | v_max + a_max | Industrial moves with clear speed limits |
-| [Double-S](../../api/trajectory/double-s-trajectory.md) | C2 | v_max + a_max + j_max | Vibration-sensitive applications |
+| [Double-S](../../api/trajectory/double-s-trajectory.md) | C2 | v_max + a_max + j_max | Moves that need bounded jerk |
 | [Modified trapezoidal](../../api/trajectory/modified-trap-trajectory.md) | C2 | q0, q1, duration | Smoother than standard trapezoidal |
 | [Modified sinusoidal](../../api/trajectory/modified-sin-trajectory.md) | C2 | q0, q1, duration | Rest-to-rest moves over a set duration |
 
@@ -82,7 +82,7 @@ for a runnable version.
 - **Acceleration matters** (e.g., force control)<br/> double-S or septic provide
   jerk-limited or C3 profiles.
 - **Duration-based profiling**<br/>modified trapezoidal or modified sinusoidal
-  when you know the total move time and want reduced residual vibration.
+  when you know the total move time and want continuous acceleration.
 
 ## Kinematic Time Scaling
 
