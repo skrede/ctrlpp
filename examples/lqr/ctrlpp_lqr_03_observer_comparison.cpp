@@ -69,7 +69,10 @@ int main()
 
     Eigen::Matrix<Scalar, 4, 4> Q_obs = Eigen::Matrix<Scalar, 4, 4>::Identity() * 100.0;
     Eigen::Matrix<Scalar, 2, 2> R_obs = Eigen::Matrix<Scalar, 2, 2>::Identity();
-    auto L_dual = ctrlpp::lqr_gain<Scalar, NX, NY>(sys_d.A.transpose(), sys_d.C.transpose(), Q_obs, R_obs);
+    // The observer corrects the predicted estimate, so its error poles are eig(A - L C A) and the dual
+    // design takes C A in place of C.
+    Eigen::Matrix<Scalar, 2, 4> CA = sys_d.C * sys_d.A;
+    auto L_dual = ctrlpp::lqr_gain<Scalar, NX, NY>(sys_d.A.transpose(), CA.transpose(), Q_obs, R_obs);
     if(!L_dual.has_value())
     {
         std::cerr << "dual observer gain synthesis failed\n";
@@ -94,14 +97,14 @@ int main()
         auto x_lu = luen.state();
         auto u = controller.compute(x_kf);
 
-        Eigen::Matrix<Scalar, 2, 1> z = sys_d.C * x_true;
-
         std::cout << std::fixed << std::setprecision(4) << t << "," << x_true(0) << "," << x_true(1) << "," << x_true(2) << "," << x_true(3) << "," << x_kf(0) << "," << x_kf(1) << ","
                   << x_kf(2) << "," << x_kf(3) << "," << x_lu(0) << "," << x_lu(1) << "," << x_lu(2) << "," << x_lu(3) << "," << u(0) << "\n";
 
+        x_true = ctrlpp::propagate(sys_d, x_true, u);
+        Eigen::Matrix<Scalar, 2, 1> z = sys_d.C * x_true;
+
         kf.predict(u);
         luen.predict(u);
-        x_true = ctrlpp::propagate(sys_d, x_true, u);
         if(const auto kf_stepped = kf.update(z); !kf_stepped)
         {
             std::cerr << "Kalman filter rejected the measurement at t=" << t << "\n";
