@@ -6,7 +6,9 @@
 #include <rapidcheck/catch.h>
 #include <rapidcheck.h>
 
+#include <cmath>
 #include <cstddef>
+#include <algorithm>
 
 namespace
 {
@@ -15,6 +17,16 @@ constexpr std::size_t NX = 2;
 constexpr std::size_t NU = 1;
 
 using OsqpMpc = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>;
+
+constexpr double bound_test_eps = 1e-6;
+
+// OSQP reports convergence once ||Ax - z||_inf <= eps_abs + eps_rel * max(||Ax||_inf, ||z||_inf) (@cite stellato2020),
+// with z projected onto [l, u]. ||z||_inf is at most `scale`, the largest of |x0| and the input bounds, and
+// ||Ax||_inf exceeds it by at most the residual, so a converged input leaves its bound by no more than this.
+double converged_bound_slack(double scale)
+{
+    return (bound_test_eps + bound_test_eps * scale) / (1.0 - bound_test_eps);
+}
 
 auto bounded_double(double lo, double hi) -> rc::Gen<double>
 {
@@ -37,176 +49,178 @@ auto make_double_integrator(double dt) -> ctrlpp::discrete_state_space<double, N
 TEST_CASE("mpc input constraints satisfied", "[mpc][property]")
 {
     rc::prop("optimal input respects u_min/u_max bounds",
-             []
-             {
-                 auto dt = *bounded_double(0.01, 0.1);
-                 auto sys = make_double_integrator(dt);
+            []
+            {
+                auto dt = *bounded_double(0.01, 0.1);
+                auto sys = make_double_integrator(dt);
 
-                 auto u_lo = *bounded_double(-20.0, -1.0);
-                 auto u_hi = *bounded_double(1.0, 20.0);
-                 auto horizon = *rc::gen::inRange(3, 16);
-                 auto x0_0 = *bounded_double(-5.0, 5.0);
-                 auto x0_1 = *bounded_double(-5.0, 5.0);
+                auto u_lo = *bounded_double(-20.0, -1.0);
+                auto u_hi = *bounded_double(1.0, 20.0);
+                auto horizon = *rc::gen::inRange(3, 16);
+                auto x0_0 = *bounded_double(-5.0, 5.0);
+                auto x0_1 = *bounded_double(-5.0, 5.0);
 
-                 ctrlpp::mpc_config<double, NX, NU> cfg{
-                     .horizon = horizon,
-                     .Q = Eigen::Matrix2d::Identity(),
-                     .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
-                     .u_min = (Eigen::Matrix<double, 1, 1>() << u_lo).finished(),
-                     .u_max = (Eigen::Matrix<double, 1, 1>() << u_hi).finished(),
-                 };
+                ctrlpp::mpc_config<double, NX, NU> cfg{
+                        .horizon = horizon,
+                        .Q = Eigen::Matrix2d::Identity(),
+                        .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+                        .u_min = (Eigen::Matrix<double, 1, 1>() << u_lo).finished(),
+                        .u_max = (Eigen::Matrix<double, 1, 1>() << u_hi).finished(),
+                };
 
-                 auto controller_result = OsqpMpc::create(sys, cfg);
-                 RC_ASSERT(controller_result.has_value());
-                 auto& controller = *controller_result;
+                auto controller_result = OsqpMpc::create(sys, cfg, ctrlpp::osqp_solver(bound_test_eps, bound_test_eps));
+                RC_ASSERT(controller_result.has_value());
+                auto& controller = *controller_result;
 
-                 Eigen::Vector2d x0{x0_0, x0_1};
-                 auto u = controller.solve(x0);
+                Eigen::Vector2d x0{x0_0, x0_1};
+                auto u = controller.solve(x0);
 
-                 if(u.has_value())
-                 {
-                     RC_ASSERT(u->input(0) >= u_lo - 1e-6);
-                     RC_ASSERT(u->input(0) <= u_hi + 1e-6);
+                if(u.has_value())
+                {
+                    RC_ASSERT(u->status == ctrlpp::solve_result_status::converged);
+                    const double slack = converged_bound_slack(std::max({std::abs(x0_0), std::abs(x0_1), -u_lo, u_hi}));
+                    RC_ASSERT(u->input(0) >= u_lo - slack);
+                    RC_ASSERT(u->input(0) <= u_hi + slack);
 
-                     auto traj = controller.trajectory();
-                     RC_ASSERT(traj.has_value());
-                     auto& [states, inputs] = *traj;
-                     for(const auto& ui : inputs)
-                     {
-                         RC_ASSERT(ui(0) >= u_lo - 1e-6);
-                         RC_ASSERT(ui(0) <= u_hi + 1e-6);
-                     }
-                 }
-             });
+                    auto traj = controller.trajectory();
+                    RC_ASSERT(traj.has_value());
+                    auto& [states, inputs] = *traj;
+                    for(const auto& ui : inputs)
+                    {
+                        RC_ASSERT(ui(0) >= u_lo - slack);
+                        RC_ASSERT(ui(0) <= u_hi + slack);
+                    }
+                }
+            });
 }
 
 TEST_CASE("mpc predicted states within bounds", "[mpc][property]")
 {
     rc::prop("predicted states respect x_min/x_max with slack tolerance",
-             []
-             {
-                 auto dt = *bounded_double(0.01, 0.1);
-                 auto sys = make_double_integrator(dt);
+            []
+            {
+                auto dt = *bounded_double(0.01, 0.1);
+                auto sys = make_double_integrator(dt);
 
-                 auto x0_0 = *bounded_double(-2.0, 2.0);
-                 auto x0_1 = *bounded_double(-2.0, 2.0);
+                auto x0_0 = *bounded_double(-2.0, 2.0);
+                auto x0_1 = *bounded_double(-2.0, 2.0);
 
-                 // Ensure feasible: x_min < x0 < x_max
-                 auto margin = *bounded_double(1.0, 5.0);
-                 Eigen::Vector2d x_lo{x0_0 - margin, x0_1 - margin};
-                 Eigen::Vector2d x_hi{x0_0 + margin, x0_1 + margin};
+                // Ensure feasible: x_min < x0 < x_max
+                auto margin = *bounded_double(1.0, 5.0);
+                Eigen::Vector2d x_lo{x0_0 - margin, x0_1 - margin};
+                Eigen::Vector2d x_hi{x0_0 + margin, x0_1 + margin};
 
-                 auto horizon = *rc::gen::inRange(3, 16);
+                auto horizon = *rc::gen::inRange(3, 16);
 
-                 ctrlpp::mpc_config<double, NX, NU> cfg{
-                     .horizon = horizon,
-                     .Q = Eigen::Matrix2d::Identity(),
-                     .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
-                     .x_min = x_lo,
-                     .x_max = x_hi,
-                 };
+                ctrlpp::mpc_config<double, NX, NU> cfg{
+                        .horizon = horizon,
+                        .Q = Eigen::Matrix2d::Identity(),
+                        .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+                        .x_min = x_lo,
+                        .x_max = x_hi,
+                };
 
-                 auto controller_result = OsqpMpc::create(sys, cfg);
-                 RC_ASSERT(controller_result.has_value());
-                 auto& controller = *controller_result;
+                auto controller_result = OsqpMpc::create(sys, cfg);
+                RC_ASSERT(controller_result.has_value());
+                auto& controller = *controller_result;
 
-                 Eigen::Vector2d x0{x0_0, x0_1};
-                 auto u = controller.solve(x0);
+                Eigen::Vector2d x0{x0_0, x0_1};
+                auto u = controller.solve(x0);
 
-                 if(u.has_value())
-                 {
-                     auto traj = controller.trajectory();
-                     RC_ASSERT(traj.has_value());
-                     auto& [states, inputs] = *traj;
-                     // Soft constraints: allow slack up to penalty tolerance
-                     constexpr double slack_tol = 0.1;
-                     for(const auto& s : states)
-                     {
-                         RC_ASSERT(s(0) >= x_lo(0) - slack_tol);
-                         RC_ASSERT(s(0) <= x_hi(0) + slack_tol);
-                         RC_ASSERT(s(1) >= x_lo(1) - slack_tol);
-                         RC_ASSERT(s(1) <= x_hi(1) + slack_tol);
-                     }
-                 }
-             });
+                if(u.has_value())
+                {
+                    auto traj = controller.trajectory();
+                    RC_ASSERT(traj.has_value());
+                    auto& [states, inputs] = *traj;
+                    // Soft constraints: allow slack up to penalty tolerance
+                    constexpr double slack_tol = 0.1;
+                    for(const auto& s : states)
+                    {
+                        RC_ASSERT(s(0) >= x_lo(0) - slack_tol);
+                        RC_ASSERT(s(0) <= x_hi(0) + slack_tol);
+                        RC_ASSERT(s(1) >= x_lo(1) - slack_tol);
+                        RC_ASSERT(s(1) <= x_hi(1) + slack_tol);
+                    }
+                }
+            });
 }
 
 TEST_CASE("mpc cost is non-negative", "[mpc][property]")
 {
     rc::prop("cost from diagnostics is non-negative for PSD Q, R",
-             []
-             {
-                 auto dt = *bounded_double(0.01, 0.1);
-                 auto sys = make_double_integrator(dt);
+            []
+            {
+                auto dt = *bounded_double(0.01, 0.1);
+                auto sys = make_double_integrator(dt);
 
-                 // Build PSD Q via L^T * L
-                 auto l00 = *bounded_double(0.1, 5.0);
-                 auto l10 = *bounded_double(-2.0, 2.0);
-                 auto l11 = *bounded_double(0.1, 5.0);
-                 Eigen::Matrix2d L;
-                 L << l00, 0.0, l10, l11;
-                 Eigen::Matrix2d Q = L.transpose() * L;
+                // Build PSD Q via L^T * L
+                auto l00 = *bounded_double(0.1, 5.0);
+                auto l10 = *bounded_double(-2.0, 2.0);
+                auto l11 = *bounded_double(0.1, 5.0);
+                Eigen::Matrix2d L;
+                L << l00, 0.0, l10, l11;
+                Eigen::Matrix2d Q = L.transpose() * L;
 
-                 // PD R
-                 auto r_val = *bounded_double(0.01, 10.0);
-                 auto R = (Eigen::Matrix<double, 1, 1>() << r_val).finished();
+                // PD R
+                auto r_val = *bounded_double(0.01, 10.0);
+                auto R = (Eigen::Matrix<double, 1, 1>() << r_val).finished();
 
-                 auto horizon = *rc::gen::inRange(3, 16);
-                 auto x0_0 = *bounded_double(-5.0, 5.0);
-                 auto x0_1 = *bounded_double(-5.0, 5.0);
+                auto horizon = *rc::gen::inRange(3, 16);
+                auto x0_0 = *bounded_double(-5.0, 5.0);
+                auto x0_1 = *bounded_double(-5.0, 5.0);
 
-                 ctrlpp::mpc_config<double, NX, NU> cfg{
-                     .horizon = horizon,
-                     .Q = Q,
-                     .R = R,
-                 };
+                ctrlpp::mpc_config<double, NX, NU> cfg{
+                        .horizon = horizon,
+                        .Q = Q,
+                        .R = R,
+                };
 
-                 auto controller_result = OsqpMpc::create(sys, cfg);
-                 RC_ASSERT(controller_result.has_value());
-                 auto& controller = *controller_result;
+                auto controller_result = OsqpMpc::create(sys, cfg);
+                RC_ASSERT(controller_result.has_value());
+                auto& controller = *controller_result;
 
-                 Eigen::Vector2d x0{x0_0, x0_1};
-                 auto u = controller.solve(x0);
+                Eigen::Vector2d x0{x0_0, x0_1};
+                auto u = controller.solve(x0);
 
-                 if(u.has_value())
-                 {
-                     auto diag = controller.diagnostics();
-                     RC_ASSERT(diag.cost >= -1e-10);
-                 }
-             });
+                if(u.has_value())
+                {
+                    auto diag = controller.diagnostics();
+                    RC_ASSERT(diag.cost >= -1e-10);
+                }
+            });
 }
 
 TEST_CASE("mpc robustness - infeasible returns the error branch", "[mpc][property]")
 {
     rc::prop("contradictory constraints return the error branch or a slack solution, no crash",
-             []
-             {
-                 auto dt = *bounded_double(0.01, 0.1);
-                 auto sys = make_double_integrator(dt);
+            []
+            {
+                auto dt = *bounded_double(0.01, 0.1);
+                auto sys = make_double_integrator(dt);
 
-                 auto horizon = *rc::gen::inRange(3, 10);
+                auto horizon = *rc::gen::inRange(3, 10);
 
-                 // Very tight state bounds around origin with large initial state
-                 ctrlpp::mpc_config<double, NX, NU> cfg{
-                     .horizon = horizon,
-                     .Q = Eigen::Matrix2d::Identity(),
-                     .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
-                     .u_min = (Eigen::Matrix<double, 1, 1>() << -0.01).finished(),
-                     .u_max = (Eigen::Matrix<double, 1, 1>() << 0.01).finished(),
-                     .x_min = (Eigen::Vector2d() << -0.01, -0.01).finished(),
-                     .x_max = (Eigen::Vector2d() << 0.01, 0.01).finished(),
-                     .hard_state_constraints = true,
-                 };
+                // Very tight state bounds around origin with large initial state
+                ctrlpp::mpc_config<double, NX, NU> cfg{
+                        .horizon = horizon,
+                        .Q = Eigen::Matrix2d::Identity(),
+                        .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+                        .u_min = (Eigen::Matrix<double, 1, 1>() << -0.01).finished(),
+                        .u_max = (Eigen::Matrix<double, 1, 1>() << 0.01).finished(),
+                        .x_min = (Eigen::Vector2d() << -0.01, -0.01).finished(),
+                        .x_max = (Eigen::Vector2d() << 0.01, 0.01).finished(),
+                        .hard_state_constraints = true,
+                };
 
-                 auto controller_result = OsqpMpc::create(sys, cfg);
-                 RC_ASSERT(controller_result.has_value());
-                 auto& controller = *controller_result;
+                auto controller_result = OsqpMpc::create(sys, cfg);
+                RC_ASSERT(controller_result.has_value());
+                auto& controller = *controller_result;
 
-                 Eigen::Vector2d x0{10.0, 10.0};
+                Eigen::Vector2d x0{10.0, 10.0};
 
-                 // Must not crash -- either returns the error branch or a solution with slack
-                 auto result = controller.solve(x0);
-                 // With hard constraints and infeasible config, expect the error branch
-                 RC_ASSERT(!result.has_value());
-             });
+                // Must not crash -- either returns the error branch or a solution with slack
+                auto result = controller.solve(x0);
+                // With hard constraints and infeasible config, expect the error branch
+                RC_ASSERT(!result.has_value());
+            });
 }
