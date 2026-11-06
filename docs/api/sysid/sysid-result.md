@@ -26,7 +26,7 @@ struct arx_result {
 };
 ```
 
-Carried on the value branch of the `ctrlpp::expected<arx_result<...>, sysid_error>` returned by `batch_arx`. Contains the identified system in observer canonical form, fit metrics computed by simulating the model against the training data, and diagnostics from the least-squares stage that produced it. See [batch-arx](batch-arx.md) for the rejection list on the error branch.
+Carried on the value branch of the `ctrlpp::expected<arx_result<...>, sysid_error>` returned by `batch_arx`, with `NU = NY = 1`. Contains the identified system in observer canonical form, fit metrics computed by simulating the model against the training data, and diagnostics from the least-squares stage that produced it. See [batch-arx](batch-arx.md) for the rejection list on the error branch.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -78,14 +78,14 @@ struct moesp_result {
 };
 ```
 
-Returned by `moesp` inside a `ctrlpp::expected`. Contains the identified system, the oblique projection singular values (for model order selection), fit metrics, the condition number of the observability matrix truncation, and the estimated initial state. The metrics simulate the identified model from `initial_state`.
+Returned by `moesp` inside a `ctrlpp::expected`, with `NU = NY = 1`. Contains the identified system, the singular values of the PO-MOESP `L32` projection (which the caller can inspect when choosing the order), fit metrics, the ratio of the largest to the `NX`-th singular value, and the estimated initial state. The metrics simulate the identified model from `initial_state`.
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `system` | `discrete_state_space<Scalar, NX, NU, NY>` | Identified state-space model |
-| `singular_values` | `Eigen::VectorX<Scalar>` | SVD singular values from oblique projection |
+| `singular_values` | `Eigen::VectorX<Scalar>` | Singular values of the `L32` projection, largest first |
 | `metrics` | `fit_metrics<Scalar>` | NRMSE and VAF |
-| `condition_number` | `Scalar` | Condition number of the truncated observability matrix; always finite on a returned result |
+| `condition_number` | `Scalar` | `singular_values(0) / singular_values(NX - 1)`, the spread of the singular values the order-`NX` truncation keeps; always finite on a returned result |
 | `initial_state` | `Vector<Scalar, NX>` | State at the first sample in the identified state basis, estimated jointly with `B` and `D` |
 
 ## Usage Example

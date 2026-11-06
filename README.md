@@ -6,20 +6,20 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
 
-**ctrlpp** is a C++20 control systems library with policy-based composition and concept-constrained interfaces. Header-only and Eigen-backed. PID controllers compose from orthogonal policies (anti-windup, derivative filtering, rate limiting); estimators and MPC/MHE inject solver backends through concepts; system identification runs online or offline with unified result types.
+**ctrlpp** is a C++20 control systems library with policy-based composition and concept-constrained interfaces. Header-only and Eigen-backed. PID controllers compose from policy types (anti-windup, derivative filtering, rate limiting); the estimators share an observer concept, and MPC and MHE take their solver backends through concepts; system identification runs online (RLS, recursive ARX) or offline (batch ARX, MOESP).
 
 **NB:** This library is still under development and has not undergone rigorous real-world testing beyond the extensive test suite under `tests/`. Reports and experiences from use or testing of this library will be appreciated.
 
 ## Features
 
-- **Policy-based PID**<br/> Compose anti-windup, derivative filtering, setpoint filtering, velocity form, ISA form, feed-forward, and rate limiting from orthogonal policy types.
+- **Policy-based PID**<br/> Compose anti-windup, derivative filtering, setpoint and measurement filtering, velocity form, ISA form, feed-forward, rate limiting, and performance metrics from policy types. Anti-windup does not compose with velocity form, and the template rejects that pair at compile time.
 - **Estimation**<br/> Kalman, Luenberger, EKF, UKF, particle filter, MEKF, manifold UKF, and complementary filter with a unified observer concept interface.
-- **Model predictive control**<br/> linear MPC (OSQP) and nonlinear MPC (NLopt) with terminal constraints, soft constraints, and delta-u limiting.
-- **Moving horizon estimation**<br/> linear MHE (OSQP) and nonlinear MHE (NLopt) with arrival cost and box constraints.
-- **Signal processing**<br/> biquad IIR sections (Butterworth, Chebyshev), FIR filters, and cascaded filter chains.
-- **System identification**<br/> RLS, batch/recursive ARX, and N4SID subspace identification with fit metrics.
+- **Model predictive control**<br/> linear MPC (OSQP or argmin's QP backend) and nonlinear MPC (argmin or NLopt) with terminal constraints, soft constraints, and delta-u limiting.
+- **Moving horizon estimation**<br/> linear MHE (OSQP or argmin's QP backend) and nonlinear MHE (NLopt or argmin) with arrival cost and box constraints.
+- **Signal processing**<br/> biquad IIR sections (Butterworth, Chebyshev Type I), FIR filters, and cascaded filter chains.
+- **System identification**<br/> RLS, batch and recursive ARX, and MOESP subspace identification of single-input single-output systems at a caller-chosen order, with NRMSE and VAF fit metrics.
 - **Lie group utilities**<br/> SO(3) quaternion exponential/logarithm maps for attitude estimation.
-- **Model utilities**<br/> state-space and transfer function representations, discretisation, conversion, stability analysis, and C++20 concepts for dynamics, measurement, and constraint models.
+- **Model utilities**<br/> state-space and transfer function representations, discretization, conversion, stability, controllability and observability tests, and C++20 concepts for dynamics, measurement, and constraint models.
 
 ## Quick Start
 
@@ -33,12 +33,12 @@ int main()
     using Pid = ctrlpp::pid<double, 1>;
     using Vec = Pid::vector_t;
 
-    Pid::config_type cfg{};
-    cfg.kp = Vec::Constant(2.0);
-    cfg.ki = Vec::Constant(1.0);
-    cfg.kd = Vec::Constant(0.0);
-    cfg.output_min = Vec::Constant(-10.0);
-    cfg.output_max = Vec::Constant(10.0);
+    Pid::config_type const cfg{
+        .kp = Vec::Constant(2.0),
+        .ki = Vec::Constant(1.0),
+        .output_min = Vec::Constant(-10.0),
+        .output_max = Vec::Constant(10.0),
+    };
 
     auto created = Pid::create(cfg);
     if (!created.has_value()) return 1;
@@ -59,7 +59,7 @@ int main()
 }
 ```
 
-`pid<double, 1>` is a SISO PID with double precision. `config_type` sets gains and output limits. `compute()` takes setpoint, measurement, and timestep, returning the control signal. Add policies for richer behaviour:
+`pid<double, 1>` is a single-channel PID with double precision. `config_type` sets gains and output limits. `compute()` takes setpoint, measurement, and timestep, and returns a `ctrlpp::expected` holding the control signal or the `pid_step_error` that refused the cycle. Add policies for richer behavior:
 
 ```cpp
 #include "ctrlpp/control/pid.h"
@@ -70,9 +70,8 @@ using Pid = ctrlpp::pid<double, 1,
     ctrlpp::rate_limit>;
 ```
 
-The four leading template arguments (`Scalar, NX, NU, NY`) are the current arity; a future
-release will collapse the three size parameters behind a single output-count parameter and
-keep a deprecated alias for the form shown here, so existing code keeps compiling.
+The template is `pid<Scalar, NY, Policies...>`: the scalar type, the number of channels `NY`
+(each with its own gains and limits), and any number of policy types.
 `anti_windup` selects an anti-windup strategy tag: back-calculation (`anti_windup<back_calc>`,
 shown above), clamping (`anti_windup<clamping>`), or conditional integration
 (`anti_windup<conditional_integration>`).
@@ -154,11 +153,13 @@ git tag or a local source checkout, respectively.
 ### Exception posture
 
 ctrlpp is **consumer-flag-agnostic**: it forces no `-fno-exceptions` / `-fno-rtti` on any
-installed or interface target, and `config.h` auto-detects `__cpp_exceptions` to adapt to
-whatever you compile with. Every type is built through a fallible factory returning
-`ctrlpp::expected`, and no construction path is gated on exceptions. The only wrappers still
-gated are the `setup(problem)` convenience overloads on the optional OSQP and NLopt backend
-adapters, whose fallible `try_setup` counterparts are unconditional.
+installed or interface target. `config.h` detects `__cpp_exceptions` (`_CPPUNWIND` on MSVC):
+the library's one throw, in `ctrlpp::expected::value()` on an error, becomes `std::abort()` when
+exceptions are off or `CTRLPP_NO_EXCEPTIONS` is defined. Fallible construction goes through
+factories returning `ctrlpp::expected`, the backend adapters' `setup` returns one too, and no
+construction or setup path is gated on exceptions. The NLopt adapter differs: NLopt's
+C++ API throws, so that backend needs exceptions enabled, and its `setup` and `solve` contain
+every exception it raises.
 
 As a self-imposed compatibility guarantee, ctrlpp's **own** tests and benches dogfood the
 throw-free discipline. `CTRLPP_TESTS_WITH_EXCEPTIONS` selects the build tree:
@@ -177,8 +178,8 @@ cmake --preset dev         # default: ctrlpp's tests + Catch2 under -fno-excepti
 cmake --preset exceptions  # carve-out: throwing-wrapper + OSQP/NLopt tests, exceptions-on
 ```
 
-OSQP and NLopt throw internally and therefore require the exceptions build; the argmin static
-NMPC path is throw-free and runs in the default `-fno-exceptions` tree.
+ctrlpp's OSQP- and NLopt-linked tests are built only in the exceptions tree; the argmin-backed
+tests run in the default `-fno-exceptions` tree.
 
 ## Documentation
 

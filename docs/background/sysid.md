@@ -11,6 +11,10 @@ unavailable, too complex, or insufficiently accurate. It provides a
 data-driven alternative that can capture the actual behavior of physical
 systems including unmodeled dynamics and nonlinearities.
 
+The methods ctrlpp ships identify linear time-invariant models of
+single-input single-output systems at orders the caller chooses: batch and
+recursive ARX, recursive least squares, and PO-MOESP subspace identification.
+
 ## The Identification Problem
 
 Given a sequence of input-output measurements $\{u(t), y(t)\}_{t=1}^{N}$,
@@ -43,6 +47,12 @@ $$
 y(t) = \varphi(t)^\top \theta + e(t)
 $$
 
+This is ctrlpp's sign convention: every coefficient enters with a plus sign.
+Ljung writes the same model with the output terms on the left,
+$y(t) + a_1 y(t-1) + \cdots + a_{n_a} y(t-n_a) = b_1 u(t-1) + \cdots + e(t)$
+[1, eq. (4.7), p. 81], so his $a_i$ are the negatives of the $a_i$ here and of
+the coefficients `batch_arx` and `recursive_arx` return.
+
 ARX is linear-in-parameters: the unknown coefficients can be estimated by
 ordinary least squares. The model orders $n_a$ (output) and $n_b$ (input)
 are selected by the user, typically using cross-validation or information
@@ -55,7 +65,8 @@ estimated by minimizing the sum of squared residuals
 [1, Ch. 7, pp. 199--205]:
 
 $$
-\hat{\theta} = \arg\min_\theta \sum_{t=1}^{N} (y(t) - \varphi(t)^\top \theta)^2
+\hat{\theta} = \arg\min_\theta \sum_{t=n+1}^{N} (y(t) - \varphi(t)^\top \theta)^2,
+\qquad n = \max(n_a, n_b)
 $$
 
 The solution is the well-known least squares formula:
@@ -64,10 +75,12 @@ $$
 \hat{\theta} = (\Phi^\top \Phi)^{-1} \Phi^\top Y
 $$
 
-where $\Phi = [\varphi(1), \ldots, \varphi(N)]^\top$ is the regression
-matrix and $Y = [y(1), \ldots, y(N)]^\top$. For numerical stability, QR
+where $\Phi = [\varphi(n+1), \ldots, \varphi(N)]^\top$ is the regression
+matrix and $Y = [y(n+1), \ldots, y(N)]^\top$; the sum starts where every
+regressor entry is a measured sample. For numerical stability, QR
 factorization is preferred over the normal equations
-[2, Sec. 6.3, pp. 203--208].
+[2, Sec. 6.3, pp. 203--208]; `batch_arx` solves with a column-pivoting QR,
+which also returns a finite minimizer when $\Phi$ is rank-deficient.
 
 ## Recursive Least Squares (RLS)
 
@@ -100,13 +113,16 @@ estimator to track slowly varying parameters
 Smaller $\lambda$ increases sensitivity to recent data but reduces estimation
 precision and can cause covariance blow-up. Bounding the covariance matrix $P$
 (e.g., resetting when its trace exceeds a threshold) prevents numerical
-instability [1, Sec. 11.3, p. 374].
+instability [1, Sec. 11.3, p. 374]. ctrlpp bounds it by rescaling, not
+resetting: when the trace of $P_t$ exceeds $n_p$ times `cov_upper_bound`, with
+$n_p$ the parameter count, $P_t$ is scaled down to that trace.
 
 ## Subspace Identification (MOESP)
 
 Subspace identification estimates a state-space model $(A, B, C, D)$ directly
-from input-output data without requiring explicit model order specification.
-The PO-MOESP algorithm [3, Ch. 9]:
+from input-output data, without first choosing an input-output model
+structure. ctrlpp's `moesp` implements the PO-MOESP algorithm [3, Ch. 9] for
+single-input single-output records, at an order $n$ the caller passes as `NX`:
 
 ### Block Hankel Matrices
 
@@ -119,38 +135,56 @@ $$
 
 ### Observability Matrix Estimation
 
-2. Estimate the column space of the extended observability matrix
-   $\mathcal{O}_i = [C^\top, (CA)^\top, \ldots, (CA^{i-1})^\top]^\top$ via
-   singular value decomposition (SVD). The model order $n$ is determined by
-   the gap in the singular value spectrum [3, Sec. 9.6].
+2. Stack the past and future input and output Hankel matrices as
+   $[U_f; U_p; Y_p; Y_f]$ and compute its LQ factorization. The block $L_{32}$
+   is the part of the future outputs orthogonal to the future inputs,
+   correlated with the past inputs and outputs, which serve as instrumental
+   variables. Its singular value decomposition (SVD) estimates the column
+   space of the extended observability matrix
+   $\mathcal{O}_i = [C^\top, (CA)^\top, \ldots, (CA^{i-1})^\top]^\top$
+   [3, Sec. 9.6]. A gap in the singular value spectrum indicates the order;
+   ctrlpp returns the spectrum (`moesp_singular_values`, and
+   `singular_values` on the result) and keeps the leading $n$ directions for
+   the $n$ it was given, without choosing the order itself.
 
 ### State-Space Extraction
 
 3. Extract $(A, B, C, D)$ from the identified subspace using least-squares.
    The matrices are unique up to a similarity transformation
-   [3, Sec. 9.6].
+   [3, Sec. 9.6]. ctrlpp takes $C$ as the first block row of the estimated
+   $\mathcal{O}_i$, solves the shift relation for $A$, and then fits $B$,
+   $D$ and the initial state $x_0$ in one least-squares problem, so the record
+   need not start at rest.
 
-MOESP handles multi-input multi-output (MIMO) systems naturally and
-automatically determines the model order from the data.
+The PO-MOESP algorithm itself extends to multi-input multi-output systems;
+ctrlpp's implementation does not, and refuses a record with more than one
+row.
 
 ## ARX to State-Space Conversion
 
 Identified ARX parameters can be converted to a discrete state-space
 representation in observer canonical form
-[1, Ch. 4, pp. 95--100]:
+[1, Ch. 4, pp. 95--100]. With $n = \max(n_a, n_b)$ states, and $a_i = 0$ for
+$i > n_a$ and $b_i = 0$ for $i > n_b$:
 
 $$
-A = \begin{bmatrix} a_1 & 1 & 0 & \cdots & 0 \\ a_2 & 0 & 1 & \cdots & 0 \\ \vdots & & & \ddots & \vdots \\ a_{n_a-1} & 0 & 0 & \cdots & 1 \\ a_{n_a} & 0 & 0 & \cdots & 0 \end{bmatrix}, \quad
-B = \begin{bmatrix} b_1 \\ b_2 \\ \vdots \\ b_{n_a} \end{bmatrix}, \quad
-C = \begin{bmatrix} 1 & 0 & \cdots & 0 \end{bmatrix}
+A = \begin{bmatrix} a_1 & 1 & 0 & \cdots & 0 \\ a_2 & 0 & 1 & \cdots & 0 \\ \vdots & & & \ddots & \vdots \\ a_{n-1} & 0 & 0 & \cdots & 1 \\ a_n & 0 & 0 & \cdots & 0 \end{bmatrix}, \quad
+B = \begin{bmatrix} b_1 \\ b_2 \\ \vdots \\ b_n \end{bmatrix}, \quad
+C = \begin{bmatrix} 1 & 0 & \cdots & 0 \end{bmatrix}, \quad
+D = 0
 $$
+
+The coefficients are in the sign convention above. Taking $n$ from the larger
+order keeps every $b_i$ when $n_b > n_a$.
 
 This state-space form can be directly used with Kalman filters, LQR, and MPC.
 
 ## Model Validation
 
 Fit metrics quantify how well the identified model matches held-out data
-[1, Ch. 16, pp. 492--498]:
+[1, Ch. 16, pp. 492--498]. The metrics `batch_arx` and `moesp` return score
+the model simulated over the identification record itself;
+`compute_fit_metrics` scores a prediction of any other record.
 
 - **NRMSE** (Normalized Root Mean Square Error):
 
@@ -169,7 +203,9 @@ $$
 \text{VAF} = 100 \left(1 - \frac{\text{var}(y - \hat{y})}{\text{var}(y)}\right) \%
 $$
 
-  Measures the percentage of output variance explained by the model.
+  Measures the percentage of output variance explained by the model; 100 is
+  a perfect fit. Both variances are taken about their own means with
+  $N - 1$ degrees of freedom.
 
 Always validate on data not used for identification (cross-validation) to
 detect overfitting.

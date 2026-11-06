@@ -1,8 +1,10 @@
 # System Identification Workflow
 
 System identification turns measured input-output data into a mathematical
-model. ctrlpp provides the full pipeline: collect data, identify a model,
-and use that model for control design.
+model. ctrlpp covers the identification and the control design; collecting
+the data, including generating the excitation signal, is the application's
+part. Its identification routines fit linear single-input single-output
+models at orders you choose.
 
 ## The Three Phases
 
@@ -13,9 +15,9 @@ and use that model for control design.
 
 ## Phase 1: Collect Data
 
-Generate a pseudo-random excitation signal and record the plant response. In
-practice this data comes from real sensors; here we simulate a first-order
-system:
+Excite the plant with an input that varies enough to reveal its dynamics and
+record the response. In practice this data comes from real sensors; here a
+uniform random input drives a simulated first-order system:
 
 ```
 y(t) = 0.7 * y(t-1) + 0.3 * u(t-1)
@@ -191,14 +193,16 @@ int main()
 | Method       | Data        | Use case                              |
 | ------------ | ----------- | ------------------------------------- |
 | `batch_arx`  | Offline     | Known model order, full dataset       |
-| `moesp`       | Offline     | Unknown order, subspace method        |
+| `moesp`       | Offline     | Chosen order, state-space directly    |
 | `rls`         | Online      | Scalar output, time-varying params    |
 | `recursive_arx`| Online    | ARX structure, streaming data         |
 
 Both offline methods return a `ctrlpp::expected` whose value carries a
-`discrete_state_space` that plugs directly into LQR, MPC, or Kalman filter
-constructors; check it before use, since a record either method cannot
-identify from is reported as a `sysid_error`.
+`discrete_state_space`, whose matrices are what LQR design, MPC and the
+Kalman filter take; check it before use, since a record either method refuses
+is reported as a `sysid_error`. Neither method chooses the model order: give
+`batch_arx` its `NA` and `NB` and `moesp` its `NX`, and use
+`moesp_singular_values` to inspect the spectrum when the order is unknown.
 
 `moesp` also estimates the state at the first sample, together with `B` and
 `D`, and returns it as `initial_state` in the identified state basis. Its record

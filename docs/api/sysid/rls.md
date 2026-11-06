@@ -1,6 +1,6 @@
 # rls
 
-Recursive Least Squares estimator with exponential forgetting factor and bounded covariance. Suitable for online parameter estimation where measurements arrive one at a time. The forgetting factor controls the effective memory length, allowing the estimator to track slowly time-varying parameters.
+Recursive Least Squares estimator with exponential forgetting factor and bounded covariance, for a scalar observation `y = phi^T theta + e`. Suitable for online parameter estimation where measurements arrive one at a time. The forgetting factor controls the effective memory length, allowing the estimator to track slowly time-varying parameters.
 
 ## Header and Alias
 
@@ -10,7 +10,7 @@ Recursive Least Squares estimator with exponential forgetting factor and bounded
 | (convenience) | `#include <ctrlpp/sysid.h>` |
 
 ```cpp
-template <typename Scalar, std::size_t NP>
+template <ctrlpp_floating_scalar Scalar, std::size_t NP>
 class rls;
 ```
 
@@ -18,8 +18,8 @@ class rls;
 
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
-| `Scalar` | floating-point | Numeric type (`double`, `float`) |
-| `NP` | `>= 1` | Number of parameters to estimate |
+| `Scalar` | `ctrlpp_floating_scalar` | Numeric type (`double`, `float`) |
+| `NP` | `>= 1` (`static_assert`) | Number of parameters to estimate |
 
 ## rls_config
 
@@ -29,7 +29,7 @@ Configuration struct `rls_config<Scalar, NP>` passed at construction.
 |-------|------|---------|-------------|
 | `lambda` | `Scalar` | `0.99` | Forgetting factor, `0 < lambda <= 1`. Lower values forget faster. |
 | `P0` | `Matrix<Scalar, NP, NP>` | `1000 * I` | Initial covariance matrix |
-| `cov_upper_bound` | `Scalar` | `1e6` | Maximum trace-per-dimension before covariance is scaled down |
+| `cov_upper_bound` | `Scalar` | `1e6` | Bound on the covariance trace per parameter: after an update whose trace exceeds `NP * cov_upper_bound`, `P` is scaled down to that trace |
 
 ## Construction
 
@@ -62,9 +62,9 @@ if(!estimator)
 ctrlpp::expected<void, rls_update_error> update(Scalar y, const Vector<Scalar, NP>& phi);
 ```
 
-Incorporates a new observation. Given measurement `y` and regressor vector `phi`, updates the parameter estimate and covariance using the standard RLS gain computation with forgetting factor.
+Incorporates a new observation. Given measurement `y` and regressor vector `phi`, it forms the gain `k = P phi / (lambda + phi^T P phi)`, updates `theta <- theta + k (y - phi^T theta)` and `P <- (P - k (P phi)^T) / lambda`, symmetrizes `P` as `(P + P^T) / 2`, and rescales it when its trace exceeds `NP * cov_upper_bound`.
 
-The cycle is classified before any member is written, so a refused cycle leaves the parameters and the covariance **bitwise unchanged** and the caller may retry on the next sample. That matters here more than a boolean suggested: those two members are the estimator's entire memory, nothing re-derives them, so one admitted non-finite sample makes them non-finite forever while `parameters()` keeps returning a vector the caller has no way to distrust.
+The cycle is classified before any member is written, so a refused cycle leaves the parameters and the covariance **bitwise unchanged** and the caller may retry on the next sample. That matters because those two members are the estimator's entire memory, nothing re-derives them, so one admitted non-finite sample makes them non-finite forever while `parameters()` keeps returning a vector the caller has no way to distrust.
 
 | Enumerator | Condition | Why it has its own name |
 |---|---|---|
@@ -74,8 +74,9 @@ The cycle is classified before any member is written, so a refused cycle leaves 
 | `rls_update_error::non_finite_denominator` | every operand was finite and `lambda + phi^T P phi` still left the scalar's range | A magnitude fault rather than a domain violation of either operand; the repair is a rescaling, not a replacement. |
 | `rls_update_error::indefinite_covariance` | the denominator is negative by more than its own resolution | `lambda + phi^T P phi` with `lambda > 0` cannot be negative for a positive semidefinite `P`, so this says `P` stopped being a covariance. A gain formed from it points **against** the prediction error. |
 | `rls_update_error::denominator_below_resolution` | the denominator carries no significant digits at the scale of the operands that formed it | Two situations reach it and it deliberately does **not** distinguish them, because the arithmetic cannot: a regressor the covariance genuinely cannot resolve, and a cancellation in `phi^T P phi` leaving a residue made entirely of rounding. |
+| `rls_update_error::non_finite_result` | every check above passed and the prediction error, the gain, the next parameters, the next covariance or its trace is still non-finite | The update overflowed after its inputs were accepted. The candidate values are discarded, so the estimator keeps its last finite state. |
 
-The resolution floor is **derived, not chosen**: it is the counted rounding of the two contractions that formed the denominator -- `2 * (2 * NP - 1) + 1` operations -- times the scalar's machine epsilon, times the largest operand that entered, which is the forgetting factor or the Cauchy-Schwarz bound on the quadratic form. An absolute floor is wrong in both directions and both are reachable: on a problem posed far below unit scale it refuses a perfectly well conditioned update, and on one posed far above it accepts a denominator whose significant digits have all canceled away.
+The denominator checks run in the order non-finite, below resolution, negative, so a denominator within its resolution of zero reports `denominator_below_resolution` whatever its sign. The resolution floor is **derived, not chosen**: it is the counted rounding of the two contractions that formed the denominator -- `2 * (2 * NP - 1) + 1` operations -- times the scalar's machine epsilon, times the largest operand that entered, which is the forgetting factor or the Cauchy-Schwarz bound on the quadratic form. An absolute floor is wrong in both directions and both are reachable: on a problem posed far below unit scale it refuses a perfectly well conditioned update, and on one posed far above it accepts a denominator whose significant digits have all canceled away.
 
 ### parameters
 
@@ -113,7 +114,13 @@ int main()
         .lambda = 0.98,
         .P0 = Eigen::Matrix2d::Identity() * 100.0};
 
-    ctrlpp::rls<double, NP> estimator(cfg);
+    auto created = ctrlpp::rls<double, NP>::create(cfg);
+    if(!created)
+    {
+        std::cerr << "RLS configuration rejected\n";
+        return 1;
+    }
+    auto& estimator = *created;
 
     // True system: y(t) = 0.8*y(t-1) + 0.5*u(t-1) + noise
     constexpr double a_true = 0.8;

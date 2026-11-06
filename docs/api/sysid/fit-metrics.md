@@ -36,11 +36,39 @@ Computes both metrics from two Eigen column vectors of the same length.
 Empty, mismatched, non-column, and non-finite records are rejected before any
 reduction is evaluated.
 
+```cpp
+enum class fit_metrics_error
+{
+    empty_record,
+    size_mismatch,
+    non_finite_record,
+    not_column_vector,
+};
+```
+
+The checks run in this order, and the first that fails is returned:
+
+| Enumerator | Condition |
+|------------|-----------|
+| `empty_record` | either record has no elements |
+| `size_mismatch` | the two records differ in row or column count |
+| `not_column_vector` | the records have more than one column |
+| `non_finite_record` | a sample in either record is NaN or infinite |
+
 **NRMSE:** `||y_actual - y_predicted|| / ||y_actual - mean(y_actual)||`. A value of 0 indicates a perfect fit; values above 1 indicate the model is worse than predicting the mean.
 
 **VAF:** `(1 - var(error) / var(y_actual)) * 100`. A value of 100% indicates the model explains all variance; values near 0% indicate no explanatory power.
 
-Edge cases: constant signals (zero variance) return NRMSE = 0 and VAF = 100% when the prediction is also perfect, or infinity/-infinity otherwise. Whether a quantity counts as vanishing is decided against a resolution floor **derived from the record's own magnitude** -- the counted rounding of the mean and the centering, `sqrt(n) * (n + 1)` operations, times the machine epsilon, times the largest sample -- and never against an absolute constant. An absolute one is wrong in both directions: at a record scale of 1e-17 it calls a genuinely varying record constant and reports a perfect fit for a predictor that explains nothing, and at a large scale it calls a constant record varying and then divides one rounding-level quantity by another.
+Edge cases: constant signals (zero variance) return NRMSE = 0 and VAF = 100% when the prediction is also perfect, or infinity/-infinity otherwise. Whether a quantity counts as vanishing is decided against a resolution floor **derived from the record's own magnitude** -- the counted rounding of the mean, the centering and the norm, `sqrt(n) * (n + 1)` operations, times the machine epsilon, times the largest sample magnitude -- and never against an absolute constant. An absolute one is wrong in both directions: at a record scale of 1e-17 it calls a genuinely varying record constant and reports a perfect fit for a predictor that explains nothing, and at a large scale it calls a constant record varying and then divides one rounding-level quantity by another. VAF compares the variances against the floor squared over `n - 1`, the units the variances carry.
+
+## norm_resolution_floor
+
+```cpp
+template <typename Derived>
+typename Derived::Scalar norm_resolution_floor(const Eigen::MatrixBase<Derived>& y);
+```
+
+Returns the floor above: `sqrt(n) * (n + 1) * epsilon * max|y_i|` for a record of `n` elements, and zero for an empty record. `compute_fit_metrics` applies it to `y_actual`.
 
 ## Usage Example
 

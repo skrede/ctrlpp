@@ -1,6 +1,6 @@
 # batch_arx
 
-Batch ARX model identification via QR decomposition. Given input/output data sequences, estimates an ARX(NA, NB) model and returns the identified discrete state-space system in observer canonical form along with fit metrics (NRMSE and VAF) and diagnostics from the least-squares stage.
+Batch ARX model identification via column-pivoting QR decomposition. Given single-input single-output data sequences, estimates an ARX(NA, NB) model and returns the identified discrete state-space system in observer canonical form along with fit metrics (NRMSE and VAF) and diagnostics from the least-squares stage.
 
 The routine validates its data records and returns `ctrlpp::expected<arx_result<...>, sysid_error>`: the identified model on success, or the specific `sysid_error` enumerator describing the rejected record. See [Record Validation: sysid_error](#record-validation-sysid_error).
 
@@ -19,12 +19,16 @@ batch_arx(const Eigen::MatrixBase<Derived1>& Y,
           std::optional<typename Derived1::Scalar> rank_threshold = std::nullopt);
 ```
 
+The model is `y(t) = a1 y(t-1) + ... + aNA y(t-NA) + b1 u(t-1) + ... + bNB u(t-NB) + e(t)`, fitted by least squares on the regressor `[y(t-1), ..., y(t-NA), u(t-1), ..., u(t-NB)]`. Every coefficient enters with a plus sign and there is no direct feedthrough from `u(t)`, so the identified `D` is zero. Ljung writes the output terms on the left, `y(t) + a1 y(t-1) + ...` (Ljung 1999, eq. (4.7)), so his `a` coefficients are the negatives of these.
+
 ## Template Parameters
 
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
-| `NA` | `>= 1` | Number of auto-regressive (output) terms |
-| `NB` | `>= 1` | Number of exogenous (input) terms |
+| `NA` | none checked | Number of auto-regressive (output) terms; `NA = 0` fits a finite impulse response |
+| `NB` | none checked | Number of exogenous (input) terms |
+
+`max(NA, NB)` is the state dimension of the realization, so at least one order must be nonzero; with both zero the call does not compile.
 
 ## Function Parameters
 
@@ -79,10 +83,12 @@ enum class sysid_error {
     record_not_single_row,
     too_few_samples,
     non_finite_sample,
+    block_rows_below_order,
+    model_not_identified,
 };
 ```
 
-The checks run in the order listed, all of them before any index arithmetic, so a record with several defects reports the first matching enumerator:
+`batch_arx` returns only the first four; `block_rows_below_order` and `model_not_identified` are MOESP's (see [moesp](moesp.md#refusals)). The checks run in the order listed, all of them before any index arithmetic, so a record with several defects reports the first matching enumerator:
 
 | Enumerator | Rejected record |
 |------------|-----------------|
@@ -149,6 +155,12 @@ int main()
               << " over " << result->diagnostics.effective_samples << " rows\n";
 }
 ```
+
+## Limitations
+
+### The record checks are not an identifiability test
+
+The four refusals check that the arithmetic is defined, not that the data identify the model. They test that the two records have the same length, that each has one row, that the record is longer than `max(NA, NB)` samples, and that every sample is finite. Nothing checks that the regressor has at least `NA + NB` rows, that the input excites the system, or that the regressor has full rank: the rank is counted and reported in `diagnostics.numerical_rank`, never refused. A constant or zero input, a record shorter than the parameter count, or a model order above the system's all pass these checks, and the call returns a finite fit with its metrics. Judge whether the data determined the model from `diagnostics.numerical_rank` against `diagnostics.parameter_count`, and from the fit metrics on a record not used for the fit.
 
 ## See Also
 

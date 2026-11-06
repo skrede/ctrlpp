@@ -1,6 +1,6 @@
 # moesp
 
-Subspace system identification using the PO-MOESP algorithm. Identifies a discrete-time linear state-space model of a given order from input/output data by projecting the future outputs onto the past inputs and outputs (the instrumental variables) and the orthogonal complement of the future inputs, then recovering the extended observability matrix via a singular value decomposition. `A` and `C` follow from the observability matrix; `B`, `D` and the initial state are then estimated together by one least-squares fit, so the record need not start at rest. Returns a `ctrlpp::expected` holding the identified system in state-space form with its estimated initial state, fit metrics and condition number, or a `sysid_error` naming why the record was refused.
+Subspace system identification using the PO-MOESP algorithm. Identifies a discrete-time linear state-space model of a single-input single-output system at the order `NX` the caller chooses. An LQ factorization of the stacked block Hankel matrix `[U_f; U_p; Y_p; Y_f]` yields the block `L32`: the part of the future outputs orthogonal to the future inputs, correlated with the past inputs and outputs as instrumental variables. Its singular value decomposition gives the extended observability matrix up to a similarity transform, as the leading `NX` left singular vectors scaled by the square roots of their singular values. `C` is the first row of the observability matrix and `A` solves its shift relation by least squares; `B`, `D` and the initial state are then estimated together by one least-squares fit, so the record need not start at rest. Returns a `ctrlpp::expected` holding the identified system in state-space form with its estimated initial state, fit metrics and condition number, or a `sysid_error` naming why the record was refused.
 
 ## Header and Alias
 
@@ -11,6 +11,7 @@ Subspace system identification using the PO-MOESP algorithm. Identifies a discre
 
 ```cpp
 template <std::size_t NX, typename Derived1, typename Derived2>
+    requires ctrlpp_floating_scalar<typename Derived1::Scalar>
 ctrlpp::expected<moesp_result<typename Derived1::Scalar, NX, 1, 1>, sysid_error>
 moesp(const Eigen::MatrixBase<Derived1>& Y,
       const Eigen::MatrixBase<Derived2>& U,
@@ -21,7 +22,7 @@ moesp(const Eigen::MatrixBase<Derived1>& Y,
 
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
-| `NX` | `>= 1` | Target state-space order |
+| `NX` | `>= 1` (`static_assert`) | State-space order of the identified model. It is not estimated from the data |
 
 ## Function Parameters
 
@@ -46,7 +47,7 @@ struct moesp_result {
 };
 ```
 
-The `singular_values` field from the oblique projection SVD can be used to determine the appropriate model order (look for a gap in the singular value spectrum). `condition_number` is `sv(0) / sv(NX - 1)`, the ratio of the largest singular value to the last one the requested order consumes. It is a diagnostic of how well the order-NX subspace is separated, and on a returned model it is always finite.
+`singular_values` holds every singular value of the `L32` projection, largest first. A gap after the `n`-th suggests order `n`; choosing the order from it is the caller's step, and `moesp` uses the `NX` it was given whatever the spectrum shows. `condition_number` is `sv(0) / sv(NX - 1)`, the ratio of the largest singular value to the last one the requested order consumes. It is a diagnostic of how well the order-NX subspace is separated, and on a returned model it is always finite.
 
 `initial_state` is the state at the first sample, expressed in the identified state basis (the realization is determined only up to a similarity transform, so compare `C * initial_state` with the record's free response rather than with a state vector from another basis). It is estimated jointly with `B` and `D`: row `t` of the regression holds the responses `C X_t` of the `B` basis, the input `u_t`, and the free response `C A^t`, so a record that starts away from rest does not bias `B` and `D`. The fit `metrics` score the identified model simulated from `initial_state`, not from zero.
 
@@ -58,7 +59,7 @@ With `N` the sample count and `i` the block-row count actually used (`block_rows
 |-----------|-------|-----|
 | `Y` and `U` hold different sample counts | `sysid_error::record_length_mismatch` | Sample k of one is paired with sample k of the other. |
 | either record has a row count other than one | `sysid_error::record_not_single_row` | The routine is single-input single-output and reads only row zero. |
-| `(i - 1) * ny < NX` | `sysid_error::block_rows_below_order` | The shift relation that recovers `A` has `(i - 1) * ny` rows and `NX` unknowns per column; below `NX` rows its minimum-norm solution is finite and wrong. The default block-row count is checked too, so a short record can report this without an explicit `block_rows`. |
+| `i = 0` or `(i - 1) * ny < NX` | `sysid_error::block_rows_below_order` | The shift relation that recovers `A` has `(i - 1) * ny` rows and `NX` unknowns per column; below `NX` rows its minimum-norm solution is finite and wrong. The default block-row count is checked too, so a short record can report this without an explicit `block_rows`. |
 | `N - 2i + 1 < i + NX` | `sysid_error::too_few_samples` | The block Hankel matrices cannot supply the `NX` projection columns the order needs. At `N - 2i + 1 <= 0` they do not exist at all. |
 | a sample is NaN or infinite | `sysid_error::non_finite_sample` | Samples enter the factorization directly. |
 
@@ -74,13 +75,12 @@ moesp_singular_values(const Eigen::MatrixBase<Derived1>& Y,
                       std::size_t block_rows = 0);
 ```
 
-Returns just the singular values without performing full identification. Useful for model order selection. It refuses the records `moesp` refuses, in the same order, checked at the smallest order `NX = 1`.
+Returns the singular values of the `L32` projection without identifying a model, so the caller can inspect the spectrum before choosing `NX`. It refuses the records `moesp` refuses, in the same order, checked at the smallest order `NX = 1`.
 
 ## Usage Example
 
 ```cpp
 #include <ctrlpp/sysid/moesp.h>
-#include <ctrlpp/model/analysis.h>
 
 #include <Eigen/Dense>
 
@@ -109,12 +109,10 @@ int main()
     {
         U(t) = input_dist(rng);
         Y(t) = (C * x)(0) + noise(rng);
-        Eigen::Matrix<double, 1, 1> u_vec;
-        u_vec << U(t);
         x = A * x + B * U(t);
     }
 
-    // Check singular values for order selection
+    // Inspect the singular values before choosing the order
     auto sv = ctrlpp::moesp_singular_values(Y, U);
     if(!sv)
     {

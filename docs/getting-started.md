@@ -3,14 +3,18 @@
 ## Prerequisites
 
 - C++20 compiler: GCC 13+, Clang 18+, MSVC 17.10+, Xcode 16.0+<br/>
-  Fallible solvers return `ctrlpp::expected`, which resolves to `std::expected`
-  automatically when compiled at C++23 or later and to an in-library C++20
-  fallback with the same call surface otherwise.
+  Fallible operations return `ctrlpp::expected`, ctrlpp's own C++20 class template
+  at every language level. Where the standard library provides `std::expected`
+  (C++23), `ctrlpp::expected` converts explicitly to and from it.
 - CMake 3.28+ to build ctrlpp<br/>
   That floor is what building ctrlpp itself requires. A project that only consumes an
   installed ctrlpp may declare a lower `cmake_minimum_required`; the installed package
   imposes no such floor on it.
-- Eigen 3.4+ (fetched automatically via FetchContent)
+- Eigen 3.4 or a later 3.x release<br/>
+  By default an installed Eigen is used when CMake finds one whose package accepts a request
+  for 3.4, and Eigen 3.4.0 is fetched only when it finds none. Eigen 5's package refuses that
+  request, so an installed Eigen 5 is passed over and the fetch is used. With `CTRLPP_CMAKE_FETCH_DEPS=ON` Eigen 3.4.0 is always
+  fetched and no installed copy is consulted.
 
 ## Installation
 
@@ -28,8 +32,8 @@ FetchContent_MakeAvailable(ctrlpp)
 target_link_libraries(my_app PRIVATE ctrlpp::ctrlpp)
 ```
 
-This pulls ctrlpp and its Eigen dependency automatically. No manual
-installation required.
+This pulls ctrlpp, and Eigen too when no suitable installed Eigen is found, so no manual
+installation is required.
 
 #### Supplying your own Eigen or backend
 
@@ -124,12 +128,12 @@ int main()
     using Pid = ctrlpp::pid<double, 1>;
     using Vec = Pid::vector_t;
 
-    Pid::config_type cfg{};
-    cfg.kp = Vec::Constant(2.0);
-    cfg.ki = Vec::Constant(1.0);
-    cfg.kd = Vec::Constant(0.0);
-    cfg.output_min = Vec::Constant(-10.0);
-    cfg.output_max = Vec::Constant(10.0);
+    Pid::config_type const cfg{
+        .kp = Vec::Constant(2.0),
+        .ki = Vec::Constant(1.0),
+        .output_min = Vec::Constant(-10.0),
+        .output_max = Vec::Constant(10.0),
+    };
 
     auto created = Pid::create(cfg);
     if (!created.has_value()) return 1;
@@ -153,17 +157,19 @@ int main()
 }
 ```
 
-`pid<double, 1>` is a single-input single-output PID controller with
-`double` precision. The three `1`s are the state, input, and output dimensions
--- all one for SISO. For MIMO systems, increase these to match your plant.
+`pid<double, 1>` is a single-channel PID controller with `double` precision.
+The template is `pid<Scalar, NY, Policies...>`, and the `1` is `NY`, the number of
+channels. A larger `NY` runs that many loops side by side, each with its own gains
+and limits.
 
 `config_type` holds the controller gains and output limits. `kp`, `ki`, and
 `kd` are Eigen vectors sized to the output dimension. `output_min` and
 `output_max` clamp the control signal.
 
 `compute()` takes the setpoint, the current measurement, and the timestep as
-arguments. It returns the control signal as an Eigen vector. The controller
-tracks the integral and derivative state internally between calls.
+arguments. It returns a `ctrlpp::expected` holding the control signal as an Eigen
+vector, or the `pid_step_error` that refused the cycle. The controller tracks the
+integral and derivative state internally between calls.
 
 ## What's next
 

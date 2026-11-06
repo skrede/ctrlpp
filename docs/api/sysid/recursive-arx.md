@@ -12,17 +12,19 @@ The estimator is single-input single-output: `update` takes one scalar output an
 | (convenience) | `#include <ctrlpp/sysid.h>` |
 
 ```cpp
-template <typename Scalar, std::size_t NA, std::size_t NB>
+template <ctrlpp_floating_scalar Scalar, std::size_t NA, std::size_t NB>
 class recursive_arx;
 ```
+
+The model is `y(t) = a1 y(t-1) + ... + aNA y(t-NA) + b1 u(t-1) + ... + bNB u(t-NB) + e(t)`: every coefficient enters with a plus sign, and there is no direct feedthrough from `u(t)`. Ljung writes the output terms on the left, `y(t) + a1 y(t-1) + ...` (Ljung 1999, eq. (4.7)), so his `a` coefficients are the negatives of these.
 
 ## Template Parameters
 
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
-| `Scalar` | floating-point | Numeric type |
-| `NA` | `>= 1` | Number of auto-regressive (output) terms |
-| `NB` | `>= 1` | Number of exogenous (input) terms |
+| `Scalar` | `ctrlpp_floating_scalar` | Numeric type |
+| `NA` | `>= 1` (`static_assert`) | Number of auto-regressive (output) terms |
+| `NB` | `>= 1` (`static_assert`) | Number of exogenous (input) terms |
 
 ## Construction
 
@@ -54,7 +56,21 @@ if(!identifier)
 ctrlpp::expected<void, recursive_arx_update_error> update(Scalar y, Scalar u);
 ```
 
-Processes a new input/output pair. Builds the regressor vector from the internal history buffers and updates the RLS parameter estimate.
+Processes a new input/output pair. Builds the regressor `[y(t-1), ..., y(t-NA), u(t-1), ..., u(t-NB)]` from the internal history buffers and updates the RLS parameter estimate with `y`. The histories start at zero, so the first `max(NA, NB)` updates use zeros for the samples before the first call. The `u` passed to a call enters the regressor from the next call on.
+
+```cpp
+enum class recursive_arx_update_error
+{
+    non_finite_input,
+    non_finite_state,
+    non_finite_observation,
+    non_finite_regressor,
+    non_finite_denominator,
+    indefinite_covariance,
+    denominator_below_resolution,
+    non_finite_result,
+};
+```
 
 The underlying estimator's refusal is **forwarded verbatim**: every enumerator of [`rls_update_error`](rls.md#update) has a same-named counterpart in `recursive_arx_update_error`, so the reason is never restated under a name that could drift out of step with the arithmetic it describes. One enumerator is the wrapper's own: `non_finite_input`, reported when `u` is not finite, before the regressor is built.
 
@@ -66,7 +82,7 @@ A refused cycle also leaves the regressor history and the write index untouched 
 const Vector<Scalar, NP>& parameters() const;
 ```
 
-Returns the current raw parameter vector `[a1, ..., aNa, b1, ..., bNb]`.
+Returns the current raw parameter vector `[a1, ..., aNA, b1, ..., bNB]`, in the sign convention above.
 
 ### covariance
 
@@ -82,7 +98,7 @@ Returns the current RLS covariance matrix.
 discrete_state_space<Scalar, std::max(NA, NB), 1, 1> to_state_space() const;
 ```
 
-Converts the current parameter estimate to observer canonical form state-space matrices (A, B, C, D). The realization has `max(NA, NB)` states so that every b-coefficient is represented even when `NB > NA` (Ljung 1999, Ch. 4), one input and one output.
+Converts the current parameter estimate to observer canonical form state-space matrices (A, B, C, D). The realization has `max(NA, NB)` states so that every b-coefficient is represented even when `NB > NA` (Ljung 1999, Ch. 4), one input and one output. `A` holds `a1 ... aNA` down its first column (zeros below) and ones on its superdiagonal, `B` holds `b1 ... bNB` (zeros below), `C = [1 0 ... 0]` and `D = 0`.
 
 ## Usage Example
 
