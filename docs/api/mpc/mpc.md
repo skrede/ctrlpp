@@ -265,7 +265,9 @@ Returns the diagnostics of the last solve, defined in `ctrlpp/mpc/diagnostics.h`
 | `cost` | The backend's QP objective, which omits the constant reference terms, so it can be negative while tracking |
 | `primal_residual`, `dual_residual` | The backend's residuals |
 | `max_constraint_violation` | The largest violation of the posed QP's rows at the returned primal `x`, `max_i max(l_i - (A x)_i, (A x)_i - u_i, 0)`, over the initial-state and dynamics equalities and the state, input, rate and terminal-set rows. Under soft state constraints the state rows are the relaxed rows `x_k - s_k`, so an overshoot the slack absorbs is not counted. A converged solve can report a positive value, since the backend stops within its tolerance. Written only when the answer is accepted, `0` otherwise |
-| `max_path_constraint_violation`, `max_terminal_constraint_violation`, `total_slack` | Always `0`; the linear controller does not compute them |
+| `max_path_constraint_violation` | The largest violation of the stage constraints at the returned primal: the state bounds on `x_1` to `x_N` as stated, so under soft state constraints an overshoot the slack absorbs is counted here, and the input and rate rows. Written only when the answer is accepted, `0` otherwise |
+| `max_terminal_constraint_violation` | The largest violation of the terminal-set rows at the returned `x_N`, as the controller poses them: `H x_N <= h` for a polytope, and for an ellipsoid the inscribed box in `P`'s eigenbasis that stands in for it. `0` without a terminal set. Written only when the answer is accepted, `0` otherwise |
+| `total_slack` | The sum of the absolute values of the state slack entries over the horizon, under soft state constraints; `0` under hard ones or without state bounds. Written only when the answer is accepted, `0` otherwise |
 | `stop_criterion` | Always `nlp_stop_criterion::unreported` |
 
 ## Terminal sets

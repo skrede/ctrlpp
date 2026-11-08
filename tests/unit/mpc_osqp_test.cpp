@@ -667,6 +667,11 @@ TEST_CASE("mpc on osqp_solver reports the posed rows' violation of its returned 
         CHECK(reported > 1e-4);
         CHECK(v.input_overshoot > v.equality_residual);
         CHECK_THAT(reported, WithinAbs(v.input_overshoot, 1e-12));
+
+        auto const& d = controller->diagnostics();
+        CHECK_THAT(d.max_path_constraint_violation, WithinAbs(v.input_overshoot, 1e-12));
+        CHECK(d.max_terminal_constraint_violation == 0.0);
+        CHECK(d.total_slack == 0.0);
     }
 
     SECTION("tight tolerances report about zero")
@@ -679,5 +684,88 @@ TEST_CASE("mpc on osqp_solver reports the posed rows' violation of its returned 
         auto reported = controller->diagnostics().max_constraint_violation;
         CHECK(reported < 1e-8);
         CHECK_THAT(reported, WithinAbs(std::max({v.input_overshoot, v.equality_residual, 0.0}), 1e-12));
+    }
+}
+
+TEST_CASE("mpc on osqp_solver measures the stated state bounds and the slack that relaxes them", "[mpc][osqp][diagnostics]")
+{
+    auto sys = make_double_integrator();
+    constexpr double x_bound = 5.0;
+    ctrlpp::mpc_config<double, NX, NU> cfg{
+            .horizon = 10,
+            .Q = Eigen::Matrix2d::Identity(),
+            .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+            .x_min = Eigen::Vector2d::Constant(-x_bound),
+            .x_max = Eigen::Vector2d::Constant(x_bound),
+            .hard_state_constraints = false,
+    };
+    const Eigen::Vector2d x0{10.0, 0.0};
+
+    auto controller = OsqpMpc::create(sys, cfg, ctrlpp::osqp_solver{1e-9, 1e-9, osqp_default_max_iter, false, true, false});
+    REQUIRE(controller.has_value());
+    REQUIRE(controller->solve(x0).has_value());
+    auto traj = controller->trajectory();
+    REQUIRE(traj.has_value());
+    auto const& states = traj->first;
+
+    double overshoot = 0.0;
+    double clamp_distance = 0.0;
+    for(std::size_t k = 1; k < states.size(); ++k)
+    {
+        Eigen::Vector2d outside = states[k] - states[k].cwiseMax(-x_bound).cwiseMin(x_bound);
+        overshoot = std::max(overshoot, outside.lpNorm<Eigen::Infinity>());
+        clamp_distance += outside.lpNorm<1>();
+    }
+
+    auto const& d = controller->diagnostics();
+    REQUIRE(overshoot > 1.0);
+    CHECK_THAT(d.max_path_constraint_violation, WithinAbs(overshoot, 1e-12));
+    CHECK_THAT(d.total_slack, WithinAbs(clamp_distance, 1e-6));
+    CHECK(d.max_constraint_violation < 1e-6);
+    CHECK(d.max_terminal_constraint_violation == 0.0);
+}
+
+TEST_CASE("mpc on osqp_solver reports the terminal set rows' violation of its returned primal", "[mpc][osqp][diagnostics]")
+{
+    auto sys = make_double_integrator();
+    Eigen::Matrix<double, 4, 2> H;
+    H << 1.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, -1.0;
+    const Eigen::Vector4d h = Eigen::Vector4d::Constant(0.1);
+    ctrlpp::mpc_config<double, NX, NU> cfg{
+            .horizon = 15,
+            .Q = Eigen::Matrix2d::Identity(),
+            .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+            .u_min = Eigen::Matrix<double, 1, 1>::Constant(-2.0),
+            .u_max = Eigen::Matrix<double, 1, 1>::Constant(2.0),
+            .terminal_constraint_set = ctrlpp::polytopic_set<double, NX>{H, h},
+    };
+    const Eigen::Vector2d x0{1.0, 0.0};
+
+    const auto terminal_violation = [&](const OsqpMpc& controller)
+    {
+        auto traj = controller.trajectory();
+        REQUIRE(traj.has_value());
+        return std::max((H * traj->first.back() - h).maxCoeff(), 0.0);
+    };
+
+    SECTION("loose tolerances report the terminal rows' overshoot")
+    {
+        auto controller = OsqpMpc::create(sys, cfg, ctrlpp::osqp_solver{1e-3, 1e-3, osqp_default_max_iter, false, true, false});
+        REQUIRE(controller.has_value());
+        REQUIRE(controller->solve(x0).has_value());
+        auto const reported = controller->diagnostics().max_terminal_constraint_violation;
+        CHECK(reported > 1e-5);
+        CHECK_THAT(reported, WithinAbs(terminal_violation(*controller), 1e-12));
+        CHECK(controller->diagnostics().total_slack == 0.0);
+    }
+
+    SECTION("tight tolerances report about zero")
+    {
+        auto controller = OsqpMpc::create(sys, cfg, ctrlpp::osqp_solver{1e-9, 1e-9, osqp_default_max_iter, false, true, false});
+        REQUIRE(controller.has_value());
+        REQUIRE(controller->solve(x0).has_value());
+        auto const reported = controller->diagnostics().max_terminal_constraint_violation;
+        CHECK(reported < 1e-8);
+        CHECK_THAT(reported, WithinAbs(terminal_violation(*controller), 1e-12));
     }
 }

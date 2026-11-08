@@ -47,9 +47,8 @@ protected:
     bool m_has_solution;
 
     Eigen::Index m_n_dec;
-    Eigen::Index m_n_con;
     Eigen::Index m_n_x_total;
-    Eigen::Index m_rate_row;
+    detail::qp_constraint_layout m_layout;
 
     mpc_state(const discrete_state_space<Scalar, NX, NU, NY>& system, const Config& config, Matrix<Scalar, NX, NX>&& Q_state, mpc_terminal_weights<Scalar, NX, NY>&& terminal,
             Solver&& solver)
@@ -69,25 +68,21 @@ protected:
         , m_u_prev{Vector<Scalar, NU>::Zero()}
         , m_has_solution{false}
         , m_n_dec{}
-        , m_n_con{}
         , m_n_x_total{}
-        , m_rate_row{}
+        , m_layout{}
     {
         compute_dimensions();
         allocate_update_vectors();
     }
 
-    // One derivation sizes the constraint matrix, the bounds vectors and the rate row, so the artifacts handed to
+    // One derivation sizes the constraint matrix, the bounds vectors and the row blocks, so the artifacts handed to
     // the backend have the height of the problem this controller believes it posed.
     void compute_dimensions()
     {
         std::int32_t N = m_config.horizon;
         m_n_x_total = (N + 1) * nx;
         m_n_dec = m_n_x_total + N * nu + detail::slack_columns<NX>(N, uses_soft_state_constraints());
-
-        auto const layout = constraint_layout();
-        m_n_con = layout.n_con;
-        m_rate_row = layout.rate_row;
+        m_layout = constraint_layout();
     }
 
     // Present state bounds are necessary but not sufficient: enforcing them hard is the caller's policy choice.
@@ -128,11 +123,11 @@ protected:
     {
         m_update.q.resize(m_n_dec);
         m_update.q.setZero();
-        m_update.l.resize(m_n_con);
+        m_update.l.resize(m_layout.n_con);
         m_update.l.setZero();
-        m_update.u.resize(m_n_con);
+        m_update.u.resize(m_layout.n_con);
         m_update.u.setZero();
-        m_constraint_product.resize(m_n_con);
+        m_constraint_product.resize(m_layout.n_con);
         m_constraint_product.setZero();
     }
 };

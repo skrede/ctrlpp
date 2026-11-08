@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+#include <algorithm>
 
 namespace ctrlpp::detail
 {
@@ -23,6 +24,7 @@ namespace ctrlpp::detail
 template <typename Scalar, std::size_t NX, std::size_t NU, typename Solver, std::size_t NY, typename Config>
 class mpc_solve : protected mpc_state<Scalar, NX, NU, Solver, NY, Config>
 {
+    static constexpr int nx = static_cast<int>(NX);
     static constexpr int nu = static_cast<int>(NU);
 
     using base = mpc_state<Scalar, NX, NU, Solver, NY, Config>;
@@ -74,8 +76,8 @@ private:
 
         // The offset comes from the same derivation that sized the bounds vectors
         // this function writes into, so it cannot address a different block.
-        this->m_update.l.segment(this->m_rate_row, nu) = -(*this->m_config.du_max) + this->m_u_prev;
-        this->m_update.u.segment(this->m_rate_row, nu) = *this->m_config.du_max + this->m_u_prev;
+        this->m_update.l.segment(this->m_layout.rate_row, nu) = -(*this->m_config.du_max) + this->m_u_prev;
+        this->m_update.u.segment(this->m_layout.rate_row, nu) = *this->m_config.du_max + this->m_u_prev;
     }
 
     void apply_warm_start()
@@ -108,7 +110,7 @@ private:
     expected<solve_output<Scalar, NU>, solver_error> extract_solution(qp_result<Scalar>& result, solve_result_status status)
     {
         auto const primal_size = this->m_n_dec;
-        auto const dual_size = this->m_n_con;
+        auto const dual_size = this->m_layout.n_con;
         if(result.x.size() < primal_size || result.y.size() < dual_size || !result.x.head(primal_size).allFinite() || !result.y.head(dual_size).allFinite() ||
                 !std::isfinite(result.objective) || !std::isfinite(result.solve_time) || !std::isfinite(result.primal_residual) || !std::isfinite(result.dual_residual) ||
                 result.iterations < 0)
@@ -122,19 +124,41 @@ private:
         this->m_last_primal = std::move(result.x);
         this->m_last_dual = std::move(result.y);
         this->m_has_solution = true;
-        this->m_last_diagnostics.max_constraint_violation = posed_constraint_violation();
+        measure_constraints();
 
         Vector<Scalar, NU> u0 = this->m_last_primal.segment(this->m_n_x_total, nu);
         this->m_u_prev = u0;
         return solve_output<Scalar, NU>{.input = std::move(u0), .status = status};
     }
 
-    // The rows as posed: a soft state row carries its slack column, so an overshoot the slack absorbs is not counted.
-    Scalar posed_constraint_violation()
+    // The overall figure takes the rows as posed, where a soft state row carries its slack column, so an overshoot the
+    // slack absorbs is not counted there; the path figure takes the state bounds as stated, so it is.
+    void measure_constraints()
     {
+        auto const& lay = this->m_layout;
+        auto const& z = this->m_last_primal;
         auto& Ax = this->m_constraint_product;
-        Ax.noalias() = this->m_constraint_matrix * this->m_last_primal.head(this->m_n_dec);
-        return (this->m_update.l - Ax).cwiseMax(Ax - this->m_update.u).cwiseMax(Scalar{0}).maxCoeff();
+        Ax.noalias() = this->m_constraint_matrix * z.head(this->m_n_dec);
+
+        auto& d = this->m_last_diagnostics;
+        d.max_constraint_violation = bound_violation(Ax, 0);
+        d.max_path_constraint_violation = std::max(bound_violation(z.segment(nx, lay.input_row - lay.state_row), lay.state_row),
+                bound_violation(Ax.segment(lay.input_row, lay.terminal_row - lay.input_row), lay.input_row));
+        d.max_terminal_constraint_violation = bound_violation(Ax.segment(lay.terminal_row, lay.n_con - lay.terminal_row), lay.terminal_row);
+
+        auto const slack_offset = this->m_n_x_total + this->m_config.horizon * nu;
+        d.total_slack = z.segment(slack_offset, this->m_n_dec - slack_offset).cwiseAbs().sum();
+    }
+
+    template <typename Values>
+    Scalar bound_violation(const Eigen::MatrixBase<Values>& values, Eigen::Index row) const
+    {
+        const Eigen::Index n = values.size();
+        if(n == 0)
+            return Scalar{0};
+        auto const l = this->m_update.l.segment(row, n);
+        auto const u = this->m_update.u.segment(row, n);
+        return (l - values).cwiseMax(values - u).cwiseMax(Scalar{0}).maxCoeff();
     }
 };
 
