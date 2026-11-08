@@ -96,11 +96,22 @@ tarballs at the versions the workflow names, check them with
 `sha256sum -c validation/octave-packages.sha256`, and install them with `control`
 first, because `signal` declares a dependency on it.
 
+The two numerical paths that depend on the runner's CPU are pinned as well,
+since the hosted runners do not share one CPU model.  The workflow selects the
+netlib reference BLAS and LAPACK in place of the image's OpenBLAS, which picks
+its kernels for the CPU at run time, and asserts that the interpreter loads
+them.  It also masks the AVX2, FMA and FMA4 features from glibc, so the library
+under test and the interpreter both use glibc's baseline variants of `exp`,
+`log`, `sin`, `cos`, `atan2` and `pow` rather than the FMA variants, which
+return a result one unit in the last place apart for some arguments.  To reproduce the run locally, do the same: select the reference
+BLAS and LAPACK and run the suite with
+`GLIBC_TUNABLES=glibc.cpu.hwcaps=-AVX2,-FMA,-FMA4`.
+
 That pinning is not a claim of hermetic reproduction.  The reference *packages*
-are pinned by content hash and the interpreter's version is asserted; the
-interpreter itself, its linear-algebra library, the compiler and the runner image
-are not pinned, so reproducing a run from months ago is not achievable on this
-route.
+are pinned by content hash, the interpreter's version is asserted and the
+CPU-dependent paths above are fixed; the interpreter's build, the reference
+BLAS and LAPACK builds, the compiler and the runner image are not pinned, so
+reproducing a run from months ago is not achievable on this route.
 
 ### Results
 
@@ -115,25 +126,25 @@ produced anything to compare.
 <!-- results:begin: generated from a harness run; edit the harness, not this region -->
 | Component | Octave function | Worst-case digits | Max abs error | Verdict |
 |-----------|----------------|:-----------------:|:-------------:|:-------:|
-| `dare` | `dare()` | 13.7 | 7.25e-13 | PASS |
-| `care` | `care()` | 14.7 | 4.00e-15 | PASS |
-| `lqr` (infinite horizon) | `dlqr()` | 10.4 | 3.43e-15 | PASS |
-| `lqr` (finite horizon) | backward Riccati | 12.6 | 9.10e-15 | PASS |
-| `lqi` | `dlqr()` augmented | 2.8 | 4.15e-14 | PASS |
+| `dare` | `dare()` | 13.6 | 1.04e-12 | PASS |
+| `care` | `care()` | 14.6 | 5.11e-15 | PASS |
+| `lqr` (infinite horizon) | `dlqr()` | 10.6 | 6.88e-15 | PASS |
+| `lqr` (finite horizon) | backward Riccati | 12.5 | 7.99e-15 | PASS |
+| `lqi` | `dlqr()` augmented | 2.8 | 5.00e-14 | PASS |
 | `pid` (linear PI) | `lsim()` | 10.8 | 1.05e-14 | PASS |
-| `place` | `place()` | 13.7 | 2.21e-15 | PASS |
-| `lqr` (board closed loop) | `dare()`, gain for `u = -Kx` | 11.7 | 1.61e-17 | PASS |
+| `place` | `place()` | 13.9 | 1.14e-15 | PASS |
+| `lqr` (board closed loop) | `dare()`, gain for `u = -Kx` | 11.3 | 3.82e-17 | PASS |
 | `discretize` (ZOH) | `c2d()` | 15.6 | 1.39e-17 | PASS |
 | `analysis` (poles) | `pole()`, `ctrb()`, `obsv()` | 15.4 | 2.08e-17 | PASS |
 | `tf2ss` / `ss2tf` | `tf2ss()`, `ss2tf()` | 15.0 | 1.11e-15 | PASS |
-| `kalman_filter` | time-varying KF | 10.6 | 4.81e-15 | PASS |
-| `luenberger_observer` | `place()` on dual | 12.9 | 4.72e-15 | PASS |
+| `kalman_filter` | time-varying KF | 10.9 | 5.27e-15 | PASS |
+| `luenberger_observer` | `place()` on dual | 13.1 | 4.61e-15 | PASS |
 | `butterworth` (4th order) | `butter()`, `filter()` | 13.2 | 6.02e-14 | PASS |
 | `fir` | `filter()` | 15.0 | 1.11e-15 | PASS |
 | `cubic_spline` (natural) | `csape()`, `ppder()` | 12.5 | 1.11e-15 | PASS |
 | `so3::exp` / `so3::log` | `rot2q()`, `q2rot()` | 15.5 | 1.11e-16 | PASS |
-| `batch_arx` | `arx()` | 13.8 | 3.08e-15 | PASS |
-| `moesp` (cross-algorithm) | `n4sid()` | 10.6 | 2.88e-13 | PASS |
+| `batch_arx` | `arx()` | 13.5 | 9.05e-15 | PASS |
+| `moesp` (cross-algorithm) | `n4sid()` | 10.9 | 1.72e-13 | PASS |
 <!-- results:end -->
 
 Census for that run: all 19 rows carry PASS, none carries FAIL, and none carries
@@ -156,8 +167,8 @@ rejected record as a case failure rather than emitting an empty comparison file.
 
 What the run establishes is that all nineteen cases agree with their Octave
 references to the digits shown, in the environment named above.  It does not
-establish that those digits reproduce elsewhere: the interpreter, its
-linear-algebra library, the compiler and the runner image are all unpinned, and
+establish that those digits reproduce elsewhere: the interpreter's build, the
+linear-algebra builds, the compiler and the runner image are all unpinned, and
 the freshness check that guards this table is byte-exact, so a run in a
 different environment will fail it until the region is regenerated in a
 reviewed commit.  The table is the published record of one run, not a standing

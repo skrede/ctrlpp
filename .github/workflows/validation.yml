@@ -98,6 +98,34 @@ jobs:
       - name: Install the interpreter and the package build tools
         run: sudo apt-get update && sudo apt-get install -y octave octave-dev gfortran
 
+      # The image's default BLAS is OpenBLAS, which picks its kernels for the CPU
+      # at run time, and the hosted runners do not share one CPU model. Measured
+      # under this image, the dare reference moves in its 14th significant digit
+      # between OpenBLAS's Nehalem and Haswell kernels, which fails the byte-exact
+      # freshness check on a run that changed nothing. The netlib reference
+      # implementations dispatch on nothing.
+      - name: Select the netlib reference BLAS and LAPACK
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y libblas3 liblapack3
+          sudo update-alternatives --set libblas.so.3-x86_64-linux-gnu /usr/lib/x86_64-linux-gnu/blas/libblas.so.3
+          sudo update-alternatives --set liblapack.so.3-x86_64-linux-gnu /usr/lib/x86_64-linux-gnu/lapack/liblapack.so.3
+
+      # What the interpreter maps, not what the alternatives claim: a library that
+      # bypasses the alternatives link would otherwise go unnoticed.
+      - name: Assert the interpreter loads the reference BLAS and LAPACK
+        run: |
+          set -euo pipefail
+          lscpu | grep -m1 'Model name'
+          maps=$(octave --no-gui --quiet --eval 'system(sprintf("cat /proc/%d/maps", getpid()));' | awk '{print $6}' | grep -E 'blas|lapack' | sort -u)
+          echo "$maps"
+          if echo "$maps" | grep -qi openblas; then
+            echo "the interpreter loaded OpenBLAS" >&2
+            exit 1
+          fi
+          echo "$maps" | grep -q '/blas/libblas.so.3'
+          echo "$maps" | grep -q '/lapack/liblapack.so.3'
+
       - name: Assert the interpreter version
         run: |
           set -euo pipefail
@@ -177,9 +205,15 @@ jobs:
       - name: Report the installed package set
         run: octave --no-gui --quiet --eval 'pkg list'
 
+      # glibc picks FMA variants of exp, log, sin, cos, atan2 and pow on a CPU
+      # that has them, and those return results one unit in the last place
+      # apart from the baseline variants for some arguments (measured under this
+      # image's glibc 2.39). Masking the features pins the baseline variants for
+      # both the library under test and the interpreter.
       - name: Run the cross-validation harness
         env:
           CTRLPP_VALIDATE_OCTAVE: octave
+          GLIBC_TUNABLES: glibc.cpu.hwcaps=-AVX2,-FMA,-FMA4
         run: CTRLPP_VALIDATE_JOBS=$(nproc) ./validation/validate.sh
 
       # The run's own accounting: a case that did not run must be a disabled test
